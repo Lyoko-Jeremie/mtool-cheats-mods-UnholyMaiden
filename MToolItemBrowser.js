@@ -48,13 +48,15 @@
 
     function serializeItem(type, id, obj) {
         if (!obj || !obj.name) return null;
+        var picMap = buildPicMap();
         return {
             type: type,
             id: id,
             name: cleanText(obj.name),
             desc: cleanText(obj.description),
             icon: (typeof obj.iconIndex === 'number') ? obj.iconIndex : 0,
-            price: (typeof obj.price === 'number') ? obj.price : 0
+            price: (typeof obj.price === 'number') ? obj.price : 0,
+            pic: picMap[type + ':' + id] || null
         };
     }
 
@@ -138,6 +140,70 @@
     }
 
     //-------------------------------------------------------------------------
+    // 装备立绘映射：解析 CharacterPictureManager 的 PictureList
+    // 每件护甲/武器在战斗中会切换到对应立绘，这里建立「装备 id → 立绘文件名」
+    //-------------------------------------------------------------------------
+    var _picMap = null;
+
+    function buildPicMap() {
+        if (_picMap) return _picMap;
+        _picMap = {};
+        try {
+            var params = PluginManager.parameters('CharacterPictureManager');
+            if (!params || !params.PictureList) return _picMap;
+            var raw = JSON.parse(params.PictureList);
+            raw.forEach(function (str) {
+                var actor;
+                try { actor = (typeof str === 'string') ? JSON.parse(str) : str; } catch (e) { return; }
+                var filesRaw;
+                try { filesRaw = JSON.parse(actor.FileList || '[]'); } catch (e) { return; }
+                filesRaw.forEach(function (fstr) {
+                    var f;
+                    try { f = (typeof fstr === 'string') ? JSON.parse(fstr) : fstr; } catch (e) { return; }
+                    if (!f || !f.FileName) return;
+                    var armor = Number(f.Armor) || 0;
+                    var weapon = Number(f.Weapon) || 0;
+                    if (armor > 0 && !_picMap['armor:' + armor]) _picMap['armor:' + armor] = f.FileName;
+                    if (weapon > 0 && !_picMap['weapon:' + weapon]) _picMap['weapon:' + weapon] = f.FileName;
+                });
+            });
+        } catch (e) { /* 忽略 */ }
+        return _picMap;
+    }
+
+    // 立绘缓存： key = name@maxWidth
+    var _picCache = {};
+
+    function getPictureBuf(name, maxW) {
+        var key = name + '@' + maxW;
+        if (_picCache[key]) return _picCache[key];
+        var bmp;
+        try { bmp = ImageManager.loadPicture(name); } catch (e) { return null; }
+        if (!bmp) return null;
+        if (!bmp.isReady()) {
+            // 触发异步加载，稍后重试即可
+            return null;
+        }
+        if (!bmp._image) return null;
+        try {
+            var w = bmp.width, h = bmp.height;
+            var scale = Math.min(1, maxW / w);
+            var cw = Math.max(1, Math.round(w * scale));
+            var ch = Math.max(1, Math.round(h * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = cw;
+            canvas.height = ch;
+            canvas.getContext('2d').drawImage(bmp._image, 0, 0, cw, ch);
+            var b64 = canvas.toDataURL('image/png').split(',')[1];
+            var buf = Buffer.from(b64, 'base64');
+            _picCache[key] = buf;
+            return buf;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    //-------------------------------------------------------------------------
     // 背包操作
     //-------------------------------------------------------------------------
     function getObject(type, id) {
@@ -198,6 +264,7 @@
 '.bi-item{box-shadow:inset 0 0 0 2px #5f8fb8}',
 '.bi-weapon{box-shadow:inset 0 0 0 2px #b8835f}',
 '.bi-armor{box-shadow:inset 0 0 0 2px #7f8fb8}',
+'.thumb{flex:none;width:120px;height:68px;object-fit:cover;border-radius:6px;border:1px solid #3a4150;background:#151820}',
 '.info{flex:1;min-width:0}',
 '.name{font-weight:600;color:#e8ecf4}',
 '.name .id{color:#5c6577;font-weight:400;font-size:12px;margin-left:6px}',
@@ -213,6 +280,13 @@
 '.sep{color:#6b7484;font-size:12px}',
 '.toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:#2a4a5e;color:#9fe3ff;padding:10px 20px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none}',
 '.toast.show{opacity:1}',
+'.preview{position:fixed;z-index:100;pointer-events:auto;cursor:pointer;border:2px solid #7fd7ff;border-radius:8px;background-color:#151820;background-repeat:no-repeat;image-rendering:pixelated;display:none;box-shadow:0 8px 24px #0009}',
+'.preview img{display:block;max-width:640px;max-height:80vh;width:auto;height:auto;border-radius:6px}',
+'.modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center}',
+'.modal.show{display:flex}',
+'.modal-mask{position:absolute;inset:0;background:rgba(0,0,0,0.72)}',
+'.modal-body{position:relative;z-index:1;cursor:pointer;max-width:92vw;max-height:92vh}',
+'.modal-body img{display:block;max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 12px 48px #000b;background:#151820}',
 '.empty{color:#5c6577;text-align:center;padding:40px}',
 '</style>',
 '</head>',
@@ -228,6 +302,8 @@
 '<div class="stat" id="stat"></div>',
 '<div class="list" id="list"></div>',
 '<div class="pager" id="pager"></div>',
+'<div class="preview" id="preview"></div>',
+'<div class="modal" id="modal"></div>',
 '<div class="toast" id="toast"></div>',
 '<script>',
 'var ALL = [], INV = {}, TAB = "all", PAGE = 0, FILTERED = [];',
@@ -270,7 +346,7 @@
 '  else {',
 '    document.getElementById("list").innerHTML = slice.map(function(x){',
 '      var k = x.type+":"+x.id, c = INV[k]||0;',
-'      return "<div class=\\"row\\" data-k=\\""+k+"\\">"+iconHtml(x.type,x.icon)+',
+'      return "<div class=\\"row\\" data-k=\\""+k+"\\">"+iconHtml(x.type,x.icon)+(x.pic?"<img class=\\"thumb\\" loading=\\"lazy\\" src=\\"/api/picture?name="+encodeURIComponent(x.pic)+"&w=200\\" title=\\"点击查看大图\\" onclick=\\"openModal(\u0027"+x.pic+"\u0027)\\" onerror=\\"retryPic(this)\\">":"")+',
 '        "<div class=\\"info\\"><div class=\\"name\\">"+esc(x.name)+"<span class=\\"id\\">#"+x.id+"</span></div><div class=\\"desc\\">"+esc(x.desc)+"</div></div>"+',
 '        "<div class=\\"count\\">"+c+"</div>"+',
 '        "<div class=\\"ops\\"><button class=\\"minus\\" data-t=\\""+x.type+"\\" data-i=\\""+x.id+"\\" data-c=\\"-1\\">−</button>"+',
@@ -300,6 +376,55 @@
 '  if(row){ var el = row.querySelector(".count"); if(el) el.textContent = count; }',
 '  toast("已更新 → "+count);',
 '}',
+'function retryPic(img){var n=Number(img.dataset.r||0);if(n>=4){img.style.display="none";return;}img.dataset.r=n+1;setTimeout(function(){img.src=img.src.split("&r=")[0]+"&r="+Date.now();},700);}',
+'var _hideTimer=null;',
+'function cancelHide(){clearTimeout(_hideTimer);}',
+'function scheduleHide(){cancelHide();_hideTimer=setTimeout(hidePreview,1500);}',
+'function openFull(url){window.open(url,"_blank");}',
+'function openModal(pic){',
+'  var url="/api/picture?name="+encodeURIComponent(pic)+"&w=1280";',
+'  var m=document.getElementById("modal");',
+'  m.innerHTML="<div class=\\"modal-mask\\" onclick=\\"closeModal()\\"></div><div class=\\"modal-body\\"><img src=\\""+url+"\\" title=\\"点击在新标签打开\\" onclick=\\"openFull(\u0027"+url+"\u0027)\\"></div>";',
+'  m.classList.add("show");',
+'}',
+'function closeModal(){document.getElementById("modal").classList.remove("show");}',
+'function showPreview(item,btn){',
+'  var el=document.getElementById("preview");',
+'  if(item.pic){',
+'    var url="/api/picture?name="+encodeURIComponent(item.pic)+"&w=640";',
+'    el.style.backgroundImage="none";',
+'    el.style.width="auto";el.style.height="auto";',
+'    el.innerHTML="<img src=\\""+url+"\\" title=\\"点击在新标签打开\\" onclick=\\"openFull(\u0027"+url+"\u0027)\\">";',
+'  } else {',
+'    el.innerHTML="";',
+'    var scale=6,s=IM.s||32;',
+'    var col=item.icon%IM.cols,row=Math.floor(item.icon/IM.cols);',
+'    el.style.width=(s*scale)+"px";el.style.height=(s*scale)+"px";',
+'    el.style.backgroundImage="url(/api/iconset)";',
+'    el.style.backgroundSize=(IM.w*scale)+"px "+(IM.h*scale)+"px";',
+'    el.style.backgroundPosition=(-col*s*scale)+"px "+(-row*s*scale)+"px";',
+'  }',
+'  el.classList.add("show");',
+'  var r=btn.getBoundingClientRect();',
+'  var w=el.offsetWidth||640,h=el.offsetHeight||360;',
+'  var x=r.left,y=r.bottom+8;',
+'  if(x+w>window.innerWidth-8)x=Math.max(8,window.innerWidth-w-8);',
+'  if(y+h>window.innerHeight-8)y=Math.max(8,r.top-h-8);',
+'  el.style.left=x+"px";el.style.top=y+"px";',
+'  cancelHide();',
+'}',
+'function hidePreview(){var el=document.getElementById("preview");el.classList.remove("show");}',
+'function bindView(){',
+'  document.querySelectorAll(".view").forEach(function(btn){',
+'    btn.onclick=function(e){',
+'      e.stopPropagation();',
+'      var k=btn.dataset.t+":"+btn.dataset.i;',
+'      var item=null;',
+'      for(var i=0;i<FILTERED.length;i++){ if((FILTERED[i].type+":"+FILTERED[i].id)===k){item=FILTERED[i];break;} }',
+'      if(item)showPreview(item,btn);',
+'    };',
+'  });',
+'}',
 'function renderPager(pages){',
 '  document.getElementById("pager").innerHTML =',
 '    "<button id=\\"prev\\">‹ 上一页</button>"+',
@@ -323,6 +448,11 @@
 '    timer = setTimeout(function(){ PAGE = 0; computeFilter(); }, 200);',
 '  });',
 '  document.getElementById("reload").onclick = function(){ PAGE = 0; load().then(function(){ toast("已刷新"); }); };',
+'  var pv = document.getElementById("preview");',
+'  pv.onmouseenter = cancelHide;',
+'  pv.onmouseleave = scheduleHide;',
+'  document.addEventListener("click", function(e){ if(!e.target.closest("#preview")) hidePreview(); });',
+'  document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal(); });',
 '  load();',
 '})();',
 '</script>',
@@ -395,6 +525,35 @@
                     'Cache-Control': 'public, max-age=86400'
                 });
                 res.end(buf);
+                return;
+            }
+
+            if (url === '/api/picture') {
+                var qs = (req.url.split('?')[1] || '');
+                var q = {};
+                qs.split('&').forEach(function (kv) {
+                    var p = kv.split('=');
+                    if (p[0]) q[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || '');
+                });
+                var pname = q.name || '';
+                var maxW = Number(q.w) || 200;
+                if (!pname || !/^[A-Za-z0-9_]+$/.test(pname)) {
+                    res.writeHead(400, { 'Content-Type': 'text/plain' });
+                    res.end('bad name');
+                    return;
+                }
+                var pbuf = getPictureBuf(pname, maxW);
+                if (!pbuf) {
+                    res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+                    res.end('loading');
+                    return;
+                }
+                res.writeHead(200, {
+                    'Content-Type': 'image/png',
+                    'Content-Length': pbuf.length,
+                    'Cache-Control': 'public, max-age=86400'
+                });
+                res.end(pbuf);
                 return;
             }
 

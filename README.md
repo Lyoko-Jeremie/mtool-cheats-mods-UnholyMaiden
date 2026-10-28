@@ -68,6 +68,10 @@ window.MToolItemBrowser.stop();
 | **添加** | `+1` / `+10` 按钮 |
 | **修改数量** | `✎` 按钮，弹窗输入目标数量（0 = 移除） |
 | **移除** | `−` 按钮，或设为 0 |
+| **装备立绘** | 252 件装备/武器显示战斗立绘缩略图（来自 `CharacterPictureManager` 的装备映射） |
+| **点击缩略图看大图** | 点击立绘缩略图弹出**模态框**显示 1280px 大图 |
+| **模态框关闭** | 点击遮罩或按 **ESC** 关闭 |
+| **点击图片看原图** | 模态框内的图片再点击一次，会在**新标签页**打开原图 |
 | **分页 + 每页数量** | 每页 50 / 100 / 200 / 500 条可选，选择记忆在 `localStorage` |
 
 ### HTTP API
@@ -77,6 +81,7 @@ window.MToolItemBrowser.stop();
 | GET | `/` | 网页界面 |
 | GET | `/api/data` | 全部物品 + 背包快照 + `iconMeta` |
 | GET | `/api/iconset` | **图标集 PNG**（游戏内解密后转码，512×640） |
+| GET | `/api/picture` | `?name=xxx&w=200` **装备立绘**（游戏内解密 + 缩放） |
 | POST | `/api/add` | `{type, id, count}` 添加 |
 | POST | `/api/set` | `{type, id, count}` 设置数量 |
 | POST | `/api/remove` | `{type, id}` 移除 |
