@@ -136,6 +136,9 @@
                 { special: 'item', itemId: 21, label: '回复药(实际)', step: 1, min: 0, max: 99 },
                 { id: 561, label: '紧身衣破损％', step: 1, min: 0, max: 100 },
                 { special: 'oneShot', label: '⚡下次敌击必死', step: 1, min: 0, max: 1 },
+                { special: 'gameSwitch', switchId: 262, label: 'CG闸门 开关#262' },
+                // 【暂时禁用】commonEvent 强制演出实测无效，入口已移除；代码保留待修复
+                // { special: 'commonEvent', eventId: 130, label: '强制CG演出(事件#130)' },
                 { special: 'param', paramId: 0, label: '最大HP', step: 100, min: 1, max: 9999999 },
                 { special: 'param', paramId: 1, label: '最大MP', step: 100, min: 0, max: 9999999 },
                 { special: 'param', paramId: 2, label: '物理攻击', step: 10, min: 0, max: 99999 },
@@ -307,6 +310,20 @@
             out.special = 'oneShot';
             out.min = 0;
             out.max = 1;
+        } else if (e.special === 'gameSwitch') {
+            // 游戏开关（Enter 切换）
+            out.special = 'gameSwitch';
+            out.switchId = Number(e.switchId);
+            if (!isFinite(out.switchId)) return null;
+            out.min = 0;
+            out.max = 1;
+        } else if (e.special === 'commonEvent') {
+            // 强制运行公共事件（Enter 执行）
+            out.special = 'commonEvent';
+            out.eventId = Number(e.eventId);
+            if (!isFinite(out.eventId)) return null;
+            out.min = 0;
+            out.max = 1;
         } else if (!isFinite(out.id)) {
             return null;
         }
@@ -427,6 +444,7 @@
         if (e.special === 'actorTp') { return 100; }
         if (e.special === 'item') return (e.max == null) ? 99 : e.max;
         if (e.special === 'oneShot') return 1;
+        if (e.special === 'gameSwitch' || e.special === 'commonEvent') return 1;
         return (e.max == null) ? 999999999 : e.max;
     }
 
@@ -499,6 +517,12 @@
             return Math.round(raw * (e.scale || 1));
         }
         if (e.special === 'oneShot') return oneShotArmed() ? 1 : 0;
+        if (e.special === 'gameSwitch') {
+            try {
+                return (typeof $gameSwitches !== 'undefined' && $gameSwitches && $gameSwitches.value(e.switchId)) ? 1 : 0;
+            } catch (err) { return 0; }
+        }
+        if (e.special === 'commonEvent') return isCommonEventRunning() ? 1 : 0;
         if (typeof $gameVariables === 'undefined' || !$gameVariables) return 0;
         return $gameVariables.value(e.id);
     }
@@ -530,6 +554,14 @@
             AttrOverrides[e.special][e.paramId] = v / (e.scale || 1);
         } else if (e.special === 'oneShot') {
             window.__MTE_ONE_SHOT__ = !!v;
+        } else if (e.special === 'gameSwitch') {
+            try {
+                if (typeof $gameSwitches !== 'undefined' && $gameSwitches) {
+                    $gameSwitches.setValue(e.switchId, !!v);
+                }
+            } catch (err) { /* 忽略 */ }
+        } else if (e.special === 'commonEvent') {
+            /* 数值写入无意义，执行由 Enter 触发 */
         } else if (typeof $gameVariables !== 'undefined' && $gameVariables) {
             $gameVariables.setValue(e.id, v);
             // 能力条目：改数值的同时按阈值重算并写入等级字母
@@ -659,6 +691,43 @@
     }
 
     //=========================================================================
+    // 强制公共事件演出（手动驱动 Game_Interpreter）
+    // 说明：MZ 战斗中 $gameTemp.reserveCommonEvent 不会自动执行，需要自己 update
+    //=========================================================================
+    var _ceInterp = null;
+
+    function runCommonEvent(eventId) {
+        if (typeof Game_Interpreter === 'undefined') return false;
+        var ev = (typeof $dataCommonEvents !== 'undefined' && $dataCommonEvents) ? $dataCommonEvents[eventId] : null;
+        if (!ev || !ev.list || !ev.list.length) return false;
+        if (_ceInterp) return false;   // 已有演出在跑
+        try {
+            _ceInterp = new Game_Interpreter();
+            _ceInterp.setup(ev.list, 0);
+            return true;
+        } catch (err) {
+            _ceInterp = null;
+            return false;
+        }
+    }
+
+    function updateCommonEventInterp() {
+        if (!_ceInterp) return;
+        try {
+            _ceInterp.update();
+            if (!_ceInterp._list || _ceInterp._index >= _ceInterp._list.length) {
+                _ceInterp = null;
+            }
+        } catch (err) {
+            _ceInterp = null;   // 出现异常则终止，绝不影响主循环
+        }
+    }
+
+    function isCommonEventRunning() {
+        return !!_ceInterp;
+    }
+
+    //=========================================================================
     // 锁定
     //=========================================================================
     var Locks = {
@@ -757,6 +826,7 @@
             // 丢参数会得到 NaN → 每帧更新 0 次 → 场景永不切换（黑屏）。
             _SceneManager_update.apply(this, arguments);
             _lockTick++;
+            try { updateCommonEventInterp(); } catch (err) { /* 演出异常不影响主循环 */ }
             if (_lockTick % 20 === 0) {
                 try { Locks.enforce(); } catch (err) { /* 绝不影响游戏主循环 */ }
             }
@@ -861,6 +931,14 @@
             var armed = oneShotArmed();
             this.changeTextColor(armed ? '#ff6b6b' : '#8a8a8a');
             this.drawText(armed ? '已武装（下次必死）' : '待命', rect.x, rect.y, valueRight, 'right');
+        } else if (e.special === 'gameSwitch') {
+            var swOn = getValue(e) === 1;
+            this.changeTextColor(swOn ? '#8cff8c' : '#8a8a8a');
+            this.drawText(swOn ? 'ON' : 'OFF', rect.x, rect.y, valueRight, 'right');
+        } else if (e.special === 'commonEvent') {
+            var running = isCommonEventRunning();
+            this.changeTextColor(running ? '#ffd166' : '#7fd7ff');
+            this.drawText(running ? '演出中…' : 'Enter 执行', rect.x, rect.y, valueRight, 'right');
         } else {
             valueText = formatNumber(value);
             if (isActorSpecial(e) || e.special === 'item') valueText += ' / ' + formatNumber(maxOf(e));
@@ -1058,6 +1136,21 @@
             window.__MTE_ONE_SHOT__ = !oneShotArmed();
             this._listWindow.refresh();
             SoundManager.playOk();
+            return;
+        }
+        // 游戏开关：回车切换 ON/OFF
+        if (e.special === 'gameSwitch') {
+            setValueInternal(e, getValue(e) ? 0 : 1);
+            this._listWindow.refresh();
+            SoundManager.playOk();
+            return;
+        }
+        // 强制公共事件：回车执行
+        if (e.special === 'commonEvent') {
+            var started = runCommonEvent(e.eventId);
+            this._listWindow.refresh();
+            if (started) SoundManager.playEquip();
+            else SoundManager.playBuzzer();
             return;
         }
         this._mode = 'editValue';
