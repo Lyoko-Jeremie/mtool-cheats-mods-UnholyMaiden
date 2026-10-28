@@ -222,6 +222,22 @@
         } else {
             log('插件注入失败，请检查 MToolValueEditor.js 是否有语法错误。');
         }
+
+        // 4.7 注入并启动「外部物品浏览器」（可选，文件不存在则跳过）
+        try {
+            var browserPath = ctx.path.join(ctx.dir, 'MToolItemBrowser.js');
+            if (ctx.fs.existsSync(browserPath)) {
+                var browserLoaded = evalInGame(v8, '!!(window.MToolItemBrowser)');
+                if (!browserLoaded) {
+                    runInGame(v8, ctx.fs.readFileSync(browserPath, 'utf8'));
+                }
+                runInGame(v8, 'if (window.MToolItemBrowser && window.MToolItemBrowser.start) { window.MToolItemBrowser.start(); }');
+                var url = evalInGame(v8, 'window.MToolItemBrowser ? (window.MToolItemBrowser.status().url || "") : ""');
+                log('物品浏览器已启动：' + (url || '（等待端口绑定）'));
+            }
+        } catch (err) {
+            log('物品浏览器加载失败：' + (err && err.message ? err.message : String(err)));
+        }
     }
 
     try {

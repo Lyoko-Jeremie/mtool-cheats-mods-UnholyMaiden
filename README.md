@@ -12,8 +12,114 @@
 |---|---|
 | `MToolValueEditor.js` | **核心插件**（RPG Maker MZ 插件）。注入游戏后提供 F9 面板、锁定、属性覆盖等全部功能。 |
 | `MToolValueEditor.config.json` | **游戏的数值映射配置**。定义面板里显示哪些条目、对应哪个变量/属性。 |
+| `MToolItemBrowser.js` | **外部物品浏览器**。在游戏进程内起本地 HTTP 服务，用浏览器管理背包物品。 |
 | `mtool-value-editor-loader.js` | **MTool 脚本 mod**。MTool 启动时自动加载，负责把插件注入当前游戏。 |
 | `install-value-editor.ps1` | **独立安装器**。把插件以正规 MZ 插件方式装进游戏目录，无需 MTool 常驻。 |
+
+---
+
+## 外部物品浏览器（MToolItemBrowser）
+
+在游戏进程内启动一个只监听 `127.0.0.1` 的 HTTP 服务，用**任意浏览器**作为外部界面。
+
+### 启动
+
+**方式 A：自动（推荐）** —— `mtool-value-editor-loader.js` 在每次游戏附加时自动注入并启动，无需手动操作。
+
+**方式 B：手动** —— MTool 的 v8Eval / 控制台执行：
+
+```js
+window.MToolItemBrowser.start();   // 默认端口 8321
+```
+
+然后浏览器打开：
+
+```
+http://127.0.0.1:8321
+```
+
+停止：
+
+```js
+window.MToolItemBrowser.stop();
+```
+
+### 性能设计
+
+为避免卡顿做了以下优化（实测数据）：
+
+| 优化项 | 说明 |
+|---|---|
+| **物品元数据缓存** | 首次序列化 945 条（12ms），之后复用（0ms） |
+| **背包只遍历持有项** | 直接读 `$gameParty._items/_weapons/_armors`，只处理 333 条（5ms），不再对 2803 个物品逐个 `numItems()` |
+| **分页渲染** | 每页 100 条，避免一次生成上千 DOM 节点 |
+| **取消轮询** | 只在打开时加载一次 + 操作后局部更新 + 手动「刷新」按钮 |
+| **搜索防抖** | 输入后 200ms 才过滤 |
+
+> ⚠️ 早期版本每个请求遍历 2803 次 `numItems()`（卡游戏主线程），前端每 3 秒重建 945 个 DOM（卡浏览器），会导致**整机卡顿**。当前版本已修复，请勿回退到旧实现。
+
+### 功能
+
+| 功能 | 说明 |
+|---|---|
+| **全部物品列表** | 道具 945 / 武器 / 护甲，含名称、描述、ID |
+| **搜索** | 输入即过滤（名称 / 描述 / ID / 类型） |
+| **背包视图** | 只显示持有数量 > 0 的物品 |
+| **添加** | `+1` / `+10` 按钮 |
+| **修改数量** | `✎` 按钮，弹窗输入目标数量（0 = 移除） |
+| **移除** | `−` 按钮，或设为 0 |
+| **分页 + 每页数量** | 每页 50 / 100 / 200 / 500 条可选，选择记忆在 `localStorage` |
+
+### HTTP API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/` | 网页界面 |
+| GET | `/api/data` | 全部物品 + 背包快照 + `iconMeta` |
+| GET | `/api/iconset` | **图标集 PNG**（游戏内解密后转码，512×640） |
+| POST | `/api/add` | `{type, id, count}` 添加 |
+| POST | `/api/set` | `{type, id, count}` 设置数量 |
+| POST | `/api/remove` | `{type, id}` 移除 |
+
+`type` 取值：`item` / `weapon` / `armor`。
+
+### JS API
+
+```js
+MToolItemBrowser.start(port)     // 启动，返回 { ok, url }
+MToolItemBrowser.stop()          // 停止
+MToolItemBrowser.status()        // { running, port, url, ready }
+MToolItemBrowser.allItems()      // 全部物品数组
+MToolItemBrowser.inventory()     // 背包数组
+MToolItemBrowser.add('item', 21, 10)   // 添加
+MToolItemBrowser.set('item', 21, 99)   // 设置数量
+MToolItemBrowser.remove('weapon', 3)   // 移除
+```
+
+### 图标显示
+
+游戏内的 `img/system/IconSet.png_` 是 **RPGMV 加密格式**（文件头 `RPGMV`），浏览器无法直接解码。
+
+解决方案：**借用游戏自己的解密能力**
+
+1. 游戏内 `ImageManager.loadSystem('IconSet')` 已能加载（游戏自带解密逻辑）
+2. 服务器把解密后的位图 `drawImage` 到 canvas，导出 PNG
+3. 通过 `GET /api/iconset` 提供给浏览器
+4. 前端用 **CSS 精灵图**（`background-position`）切出单个图标
+
+```
+IconSet.png_（加密） → ImageManager 解密 → canvas.toDataURL → /api/iconset → 前端 background-position 切图
+```
+
+- 图标尺寸：32×32，共 16 列 × 20 行 = 320 个
+- 整张图 295KB，带 `Cache-Control: max-age=86400`，一次加载重复使用
+- 分类色边框：道具蓝 / 武器橙 / 护甲紫
+
+### 说明
+
+- 服务只绑定 `127.0.0.1`，不对外网开放。
+- 操作直接作用于 `$gameParty`，即时生效，无需等待帧刷新。
+- 游戏重启后由 loader 自动重新注入并启动，无需手动操作。
 
 ---
 
