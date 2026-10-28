@@ -537,7 +537,8 @@
                 });
                 var pname = q.name || '';
                 var maxW = Number(q.w) || 200;
-                if (!pname || !/^[A-Za-z0-9_]+$/.test(pname)) {
+                if (!pname || pname.indexOf('..') >= 0 || /[\\\0]/.test(pname) ||
+                    !/^[A-Za-z0-9_\/\.\- ]+$/.test(pname)) {
                     res.writeHead(400, { 'Content-Type': 'text/plain' });
                     res.end('bad name');
                     return;

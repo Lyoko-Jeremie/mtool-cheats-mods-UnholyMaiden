@@ -125,6 +125,7 @@ IconSet.png_（加密） → ImageManager 解密 → canvas.toDataURL → /api/i
 - 服务只绑定 `127.0.0.1`，不对外网开放。
 - 操作直接作用于 `$gameParty`，即时生效，无需等待帧刷新。
 - 游戏重启后由 loader 自动重新注入并启动，无需手动操作。
+- **支持 MOD 物品的子目录立绘路径**（如 `MOD/Outfits/Tentacles`）：接口允许 `/`，但会拒绝 `..` 和反斜杠以防路径穿越。
 
 ---
 
