@@ -135,6 +135,8 @@
                 { id: 13, label: '药(显示值)', step: 1, min: 0, max: 9999 },
                 { special: 'item', itemId: 21, label: '回复药(实际)', step: 1, min: 0, max: 99 },
                 { id: 561, label: '紧身衣破损％', step: 1, min: 0, max: 100 },
+                { id: 74,  label: '开锁加成A(技巧)', step: 5, min: 0, max: 100 },
+                { id: 317, label: '开锁加成B(装备)', step: 5, min: 0, max: 100 },
                 { special: 'oneShot', label: '⚡下次敌击必死', step: 1, min: 0, max: 1 },
                 { special: 'gameSwitch', switchId: 262, label: 'CG闸门 开关#262' },
                 // 【暂时禁用】commonEvent 强制演出实测无效，入口已移除；代码保留待修复
