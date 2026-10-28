@@ -132,6 +132,22 @@
                 { special: 'actorHp', label: 'HP', step: 100, min: 0, max: 999999 },
                 { special: 'actorMp', label: 'MP', step: 100, min: 0, max: 999999 },
                 { special: 'actorTp', label: 'SP', step: 10,  min: 0, max: 100 },
+                { id: 13, label: '药(显示值)', step: 1, min: 0, max: 9999 },
+                { special: 'item', itemId: 21, label: '回复药(实际)', step: 1, min: 0, max: 99 },
+                { id: 561, label: '紧身衣破损％', step: 1, min: 0, max: 100 },
+                { special: 'oneShot', label: '⚡下次敌击必死', step: 1, min: 0, max: 1 },
+                { special: 'param', paramId: 0, label: '最大HP', step: 100, min: 1, max: 9999999 },
+                { special: 'param', paramId: 1, label: '最大MP', step: 100, min: 0, max: 9999999 },
+                { special: 'param', paramId: 2, label: '物理攻击', step: 10, min: 0, max: 99999 },
+                { special: 'param', paramId: 3, label: '防御力', step: 10, min: 0, max: 99999 },
+                { special: 'param', paramId: 4, label: '魔力', step: 10, min: 0, max: 99999 },
+                { special: 'param', paramId: 5, label: '魔法抵抗', step: 10, min: 0, max: 99999 },
+                { special: 'param', paramId: 6, label: '行动速度', step: 10, min: 0, max: 99999 },
+                { special: 'param', paramId: 7, label: '祈力', step: 10, min: 0, max: 99999 },
+                { special: 'xparam', paramId: 1, label: '回避率％', step: 5, min: 0, max: 999, scale: 100 },
+                { special: 'xparam', paramId: 2, label: '致命率％', step: 5, min: 0, max: 999, scale: 100 },
+                { special: 'sparam', paramId: 6, label: '物理伤害％', step: 5, min: 0, max: 999, scale: 100 },
+                { special: 'sparam', paramId: 7, label: '魔法伤害％', step: 5, min: 0, max: 999, scale: 100 },
                 { id: 41,  label: '体力', step: 1, min: 0, max: 9999, rankId: 461, thresholds: [4, 10, 15, 25, 35, 50] },
                 { id: 42,  label: '筋力', step: 1, min: 0, max: 9999, rankId: 462, thresholds: [4, 14, 24, 34, 44, 69] },
                 { id: 43,  label: '技術', step: 1, min: 0, max: 9999, rankId: 463, thresholds: [4, 14, 24, 34, 44, 69] },
@@ -273,6 +289,24 @@
             // 角色属性条目（HP / MP / SP=TP）
             out.special = e.special;
             out.max = (typeof e.max === 'number') ? e.max : 999999999;
+        } else if (e.special === 'item') {
+            // 背包物品数量条目
+            out.special = 'item';
+            out.itemId = Number(e.itemId);
+            if (!isFinite(out.itemId)) return null;
+            out.max = (typeof e.max === 'number') ? e.max : 99;
+        } else if (e.special === 'param' || e.special === 'xparam' || e.special === 'sparam') {
+            // 派生属性覆盖（最大HP / 六维 / 回避率 / 伤害率 等）
+            out.special = e.special;
+            out.paramId = Number(e.paramId);
+            if (!isFinite(out.paramId)) return null;
+            out.scale = (typeof e.scale === 'number' && e.scale > 0) ? e.scale : 1;
+            out.max = (typeof e.max === 'number') ? e.max : 99999;
+        } else if (e.special === 'oneShot') {
+            // 一次性开关：下次敌人攻击必中且归零
+            out.special = 'oneShot';
+            out.min = 0;
+            out.max = 1;
         } else if (!isFinite(out.id)) {
             return null;
         }
@@ -360,8 +394,20 @@
     // 读写值
     //=========================================================================
     function keyOf(e) {
+        if (e.special === 'item') return 'item' + e.itemId;
+        if (e.special === 'param' || e.special === 'xparam' || e.special === 'sparam') {
+            return e.special + ':' + e.paramId;
+        }
         if (e.special) return e.special;   // gold / actorHp / actorMp / actorTp
         return 'v' + e.id;
+    }
+
+    /** 取道具对象 */
+    function itemOf(e) {
+        try {
+            if (typeof $dataItems !== 'undefined' && $dataItems) return $dataItems[e.itemId] || null;
+        } catch (err) { /* 忽略 */ }
+        return null;
     }
 
     /** 当前队长（HP/MP/TP 等角色属性都取队长） */
@@ -379,6 +425,8 @@
         if (e.special === 'actorHp') { var a = leaderActor(); return a ? a.mhp : 999999; }
         if (e.special === 'actorMp') { var a = leaderActor(); return a ? a.mmp : 999999; }
         if (e.special === 'actorTp') { return 100; }
+        if (e.special === 'item') return (e.max == null) ? 99 : e.max;
+        if (e.special === 'oneShot') return 1;
         return (e.max == null) ? 999999999 : e.max;
     }
 
@@ -437,6 +485,20 @@
         if (e.special === 'actorHp') { var a1 = leaderActor(); return a1 ? a1.hp : 0; }
         if (e.special === 'actorMp') { var a2 = leaderActor(); return a2 ? a2.mp : 0; }
         if (e.special === 'actorTp') { var a3 = leaderActor(); return a3 ? a3.tp : 0; }
+        if (e.special === 'item') {
+            var it0 = itemOf(e);
+            return (it0 && $gameParty) ? $gameParty.numItems(it0) : 0;
+        }
+        if (e.special === 'param' || e.special === 'xparam' || e.special === 'sparam') {
+            var la0 = leaderActor();
+            if (!la0) return 0;
+            var raw;
+            if (e.special === 'param') raw = la0.param(e.paramId);
+            else if (e.special === 'xparam') raw = la0.xparam(e.paramId);
+            else raw = la0.sparam(e.paramId);
+            return Math.round(raw * (e.scale || 1));
+        }
+        if (e.special === 'oneShot') return oneShotArmed() ? 1 : 0;
         if (typeof $gameVariables === 'undefined' || !$gameVariables) return 0;
         return $gameVariables.value(e.id);
     }
@@ -456,6 +518,18 @@
             var am = leaderActor(); if (am) am.setMp(v);
         } else if (e.special === 'actorTp') {
             var at = leaderActor(); if (at) at.setTp(v);
+        } else if (e.special === 'item') {
+            var it1 = itemOf(e);
+            if (it1 && $gameParty) {
+                var curIt = $gameParty.numItems(it1);
+                if (v > curIt) $gameParty.gainItem(it1, v - curIt);
+                else if (v < curIt) $gameParty.loseItem(it1, curIt - v);
+            }
+        } else if (e.special === 'param' || e.special === 'xparam' || e.special === 'sparam') {
+            // 写入派生属性覆盖值（内部值 = 显示值 / scale）
+            AttrOverrides[e.special][e.paramId] = v / (e.scale || 1);
+        } else if (e.special === 'oneShot') {
+            window.__MTE_ONE_SHOT__ = !!v;
         } else if (typeof $gameVariables !== 'undefined' && $gameVariables) {
             $gameVariables.setValue(e.id, v);
             // 能力条目：改数值的同时按阈值重算并写入等级字母
@@ -465,6 +539,123 @@
             }
         }
         return v;
+    }
+
+    //=========================================================================
+    // 派生属性覆盖层（param / xparam / sparam）
+    // 覆盖表挂在 window 上：热重载/多次加载共享同一份，可随时清空恢复
+    //=========================================================================
+    var AttrOverrides = (function () {
+        if (!window.__MTE_ATTR_OVERRIDES__) {
+            window.__MTE_ATTR_OVERRIDES__ = { param: {}, xparam: {}, sparam: {} };
+        }
+        return window.__MTE_ATTR_OVERRIDES__;
+    })();
+
+    /** 该条目当前是否处于「覆盖」状态 */
+    function hasOverride(e) {
+        if (e.special !== 'param' && e.special !== 'xparam' && e.special !== 'sparam') return false;
+        return AttrOverrides[e.special][e.paramId] != null;
+    }
+
+    /** 是否为「属性覆盖层」实现的条目 */
+    function isOverlayEntry(e) {
+        return e.special === 'param' || e.special === 'xparam' || e.special === 'sparam';
+    }
+
+    /** 恢复单个条目到原始计算值，返回是否确实清除了覆盖 */
+    function clearOverride(e) {
+        if (e.special !== 'param' && e.special !== 'xparam' && e.special !== 'sparam') return false;
+        if (AttrOverrides[e.special][e.paramId] == null) return false;
+        delete AttrOverrides[e.special][e.paramId];
+        return true;
+    }
+
+    /** 恢复全部属性覆盖，返回清除的条目数 */
+    function clearAllOverrides() {
+        var n = 0;
+        ['param', 'xparam', 'sparam'].forEach(function (kind) {
+            var m = AttrOverrides[kind];
+            if (!m) return;
+            for (var key in m) {
+                if (Object.prototype.hasOwnProperty.call(m, key)) {
+                    delete m[key];
+                    n++;
+                }
+            }
+        });
+        return n;
+    }
+
+    if (typeof Game_BattlerBase !== 'undefined' && !Game_BattlerBase.prototype.__mteAttrHooked) {
+        Game_BattlerBase.prototype.__mteAttrHooked = true;
+
+        // 基础参数（0:mhp 1:mmp 2:atk 3:def 4:mat 5:mdf 6:agi 7:luk）
+        var _baseParam = Game_BattlerBase.prototype.param;
+        Game_BattlerBase.prototype.param = function (paramId) {
+            var ov = AttrOverrides.param[paramId];
+            if (ov != null && typeof this._actorId === 'number' && this._actorId === 1) return ov;
+            return _baseParam.call(this, paramId);
+        };
+
+        // X 参数（1:eva 回避率 2:cri 致命率 …）
+        var _baseXparam = Game_BattlerBase.prototype.xparam;
+        Game_BattlerBase.prototype.xparam = function (xparamId) {
+            var ov = AttrOverrides.xparam[xparamId];
+            if (ov != null && typeof this._actorId === 'number' && this._actorId === 1) return ov;
+            return _baseXparam.call(this, xparamId);
+        };
+
+        // S 参数（6:pdr 物理伤害 7:mdr 魔法伤害 …）
+        var _baseSparam = Game_BattlerBase.prototype.sparam;
+        Game_BattlerBase.prototype.sparam = function (sparamId) {
+            var ov = AttrOverrides.sparam[sparamId];
+            if (ov != null && typeof this._actorId === 'number' && this._actorId === 1) return ov;
+            return _baseSparam.call(this, sparamId);
+        };
+    }
+
+    //=========================================================================
+    // 必死一击：下一次敌人对玩家的攻击 —— 强制命中 + 伤害 = 目标当前 HP
+    //=========================================================================
+    function oneShotArmed() {
+        return !!window.__MTE_ONE_SHOT__;
+    }
+
+    function isEnemyAttackOnActor(action, target) {
+        try {
+            return action.isForOpponent() && target && typeof target.isActor === 'function' && target.isActor();
+        } catch (err) {
+            return false;
+        }
+    }
+
+    if (typeof Game_Action !== 'undefined' && !Game_Action.prototype.__mteOneShotHooked) {
+        Game_Action.prototype.__mteOneShotHooked = true;
+
+        // 命中率拉满：missed = Math.random() >= itemHit → 1 时永不 miss
+        var _itemHit = Game_Action.prototype.itemHit;
+        Game_Action.prototype.itemHit = function (target) {
+            if (oneShotArmed() && isEnemyAttackOnActor(this, target)) return 1;
+            return _itemHit.call(this, target);
+        };
+
+        // 回避率归零：evaded = Math.random() < itemEva → 0 时永不闪避
+        var _itemEva = Game_Action.prototype.itemEva;
+        Game_Action.prototype.itemEva = function (target) {
+            if (oneShotArmed() && isEnemyAttackOnActor(this, target)) return 0;
+            return _itemEva.call(this, target);
+        };
+
+        // 伤害改为「目标当前 HP」→ 一次归零
+        var _executeHpDamage = Game_Action.prototype.executeHpDamage;
+        Game_Action.prototype.executeHpDamage = function (target, value) {
+            if (oneShotArmed() && isEnemyAttackOnActor(this, target)) {
+                value = target.hp;
+                window.__MTE_ONE_SHOT__ = false;   // 一次性，用完即关
+            }
+            return _executeHpDamage.call(this, target, value);
+        };
     }
 
     //=========================================================================
@@ -511,9 +702,21 @@
                             else if (k === 'actorMp' && la.mp !== target) la.setMp(target);
                             else if (k === 'actorTp' && la.tp !== target) la.setTp(target);
                         }
+                    } else if (k.indexOf('item') === 0) {
+                        var iid = Number(k.slice(4));
+                        var iobj = (typeof $dataItems !== 'undefined' && $dataItems) ? $dataItems[iid] : null;
+                        if (iobj && $gameParty) {
+                            var icur = $gameParty.numItems(iobj);
+                            if (icur !== target) {
+                                if (target > icur) $gameParty.gainItem(iobj, target - icur);
+                                else $gameParty.loseItem(iobj, icur - target);
+                            }
+                        }
                     } else {
                         var id = Number(k.slice(1));
-                        if ($gameVariables.value(id) !== target) $gameVariables.setValue(id, target);
+                        if ($gameVariables && $gameVariables.value(id) !== target) {
+                            $gameVariables.setValue(id, target);
+                        }
                     }
                 } catch (err) { /* 单项失败不影响其它 */ }
             }
@@ -622,8 +825,18 @@
         var rankInfo = (e.rankId != null) ? rankFor(e, value) : null;
 
         this.changeTextColor(locked ? '#ffd166' : '#ffffff');
+        var nameX = rect.x + pad;
+        var nameWidth = rect.width - 360;
+        // 覆盖层实现的项（param/xparam/sparam）加图标标识：◇ 未覆盖 / ◆ 已覆盖
+        if (isOverlayEntry(e)) {
+            this.changeTextColor(hasOverride(e) ? '#7fd7ff' : '#6f6f6f');
+            this.drawText(hasOverride(e) ? '◆' : '◇', nameX, rect.y, 24, 'left');
+            nameX += 26;
+            nameWidth -= 26;
+        }
+        this.changeTextColor(locked ? '#ffd166' : '#ffffff');
         var nameText = e.label + (e.id ? '  (#' + e.id + ')' : '');
-        this.drawText(nameText, rect.x + pad, rect.y, rect.width - 360, 'left');
+        this.drawText(nameText, nameX, rect.y, nameWidth, 'left');
 
         var valueRight = rect.width - pad - 64;
         var valueText;
@@ -644,10 +857,15 @@
             this.drawText(rankInfo.ch, rect.x, rect.y, valueRight, 'right');
             this.changeTextColor(locked ? '#8cff8c' : '#ffe28a');
             this.drawText(formatNumber(value), rect.x, rect.y, valueRight - 52, 'right');
+        } else if (e.special === 'oneShot') {
+            var armed = oneShotArmed();
+            this.changeTextColor(armed ? '#ff6b6b' : '#8a8a8a');
+            this.drawText(armed ? '已武装（下次必死）' : '待命', rect.x, rect.y, valueRight, 'right');
         } else {
             valueText = formatNumber(value);
-            if (isActorSpecial(e)) valueText += ' / ' + formatNumber(maxOf(e));
-            this.changeTextColor(locked ? '#8cff8c' : '#ffe28a');
+            if (isActorSpecial(e) || e.special === 'item') valueText += ' / ' + formatNumber(maxOf(e));
+            var overridden = hasOverride(e);
+            this.changeTextColor(overridden ? '#7fd7ff' : (locked ? '#8cff8c' : '#ffe28a'));
             this.drawText(valueText, rect.x, rect.y, valueRight, 'right');
         }
 
@@ -668,6 +886,7 @@
 
     Scene_MtoolPanel.prototype.create = function () {
         Scene_MenuBase.prototype.create.call(this);
+        this.__mtePanel = true;     // 面板实例标记：用于幂等判断，防止重复叠层
         this._mode = 'browse';      // browse | editValue | addVar
         this._editBuffer = '';
         this._refreshTick = 0;
@@ -710,8 +929,8 @@
     Scene_MtoolPanel.prototype.updateHelpText = function () {
         if (!this._helpWindow) return;
         var srcText = { 'external': '外部注入', 'builtin': '内置预设', 'saved': '本地保存', 'auto': '自动探测', 'empty': '空' }[entriesSource] || entriesSource;
-        var line1 = '↑↓ 选择    ←→ 调整(Shift x10)    Enter 输入    A 添加    D 删除    L 锁定    Esc/F9 关闭';
-        var line2 = '游戏：' + (gameTitle() || '未知') + '    条目来源：' + srcText + '    共 ' + entries.length + ' 项';
+        var line1 = '↑↓ 选择  ←→ 调整  Enter 输入  A 添加  D 删除  L 锁定  R 恢复(Shift 全部)  Esc/F9 关闭';
+        var line2 = '游戏：' + (gameTitle() || '未知') + '    条目来源：' + srcText + '    共 ' + entries.length + ' 项    ◇/◆=属性覆盖层项(◆已改，R 恢复)';
         if (this._mode === 'addVar') {
             line2 = '输入变量 ID：' + (this._editBuffer || '') + '_     Enter 确认    Esc 取消';
         } else if (this._mode === 'editValue') {
@@ -806,6 +1025,11 @@
                 this.toggleLock();
                 ev.preventDefault();
                 break;
+            case 'r':
+            case 'R':
+                this.restoreCurrent(Input.isPressed('shift'));
+                ev.preventDefault();
+                break;
             case 'Escape':
                 this.popScene();
                 ev.preventDefault();
@@ -829,6 +1053,13 @@
     Scene_MtoolPanel.prototype.beginEditValue = function () {
         var e = entries[this._listWindow.index()];
         if (!e) return;
+        // 一次性开关条目：回车直接切换，不进入数字输入
+        if (e.special === 'oneShot') {
+            window.__MTE_ONE_SHOT__ = !oneShotArmed();
+            this._listWindow.refresh();
+            SoundManager.playOk();
+            return;
+        }
         this._mode = 'editValue';
         this._editBuffer = String(getValue(e));
         this._editFresh = true;   // 首次输入数字时替换当前值，而不是追加
@@ -906,6 +1137,28 @@
         SoundManager.playCancel();
     };
 
+    // 关闭面板时清空输入状态，避免按键残留在战斗等场景
+    Scene_MtoolPanel.prototype.popScene = function () {
+        try { if (typeof Input !== 'undefined' && Input.clear) Input.clear(); } catch (err) { /* 忽略 */ }
+        Scene_MenuBase.prototype.popScene.call(this);
+    };
+
+    // R 恢复：单项恢复当前覆盖；配合 Shift 恢复全部覆盖
+    Scene_MtoolPanel.prototype.restoreCurrent = function (all) {
+        if (all) {
+            clearAllOverrides();
+            this._listWindow.refresh();
+            this.updateHelpText();
+            SoundManager.playCancel();
+            return;
+        }
+        var e = entries[this._listWindow.index()];
+        if (!e) return;
+        clearOverride(e);
+        this._listWindow.refresh();
+        SoundManager.playCancel();
+    };
+
     Scene_MtoolPanel.prototype.toggleLock = function () {
         var e = entries[this._listWindow.index()];
         if (!e) return;
@@ -918,11 +1171,36 @@
     //=========================================================================
     // 开关面板
     //=========================================================================
+    /** 是否为面板场景（兼容热重载产生的旧实例：无标记时按类名判断） */
+    function isPanelScene(s) {
+        return !!(s && (s.__mtePanel || (s.constructor && s.constructor.name === 'Scene_MtoolPanel')));
+    }
+
+    /** 是否有面板正在创建中（已 push、尚未切换） */
+    function isPanelPending() {
+        return isPanelScene(SceneManager._nextScene);
+    }
+
+    /** 清掉场景栈里遗留的面板类，返回清理数量 */
+    function prunePanelStack() {
+        var stack = SceneManager._stack || [];
+        var out = [];
+        for (var i = 0; i < stack.length; i++) {
+            var cls = stack[i];
+            if (cls && cls.name === 'Scene_MtoolPanel') continue;
+            out.push(cls);
+        }
+        if (out.length !== stack.length) {
+            SceneManager._stack = out;
+        }
+        return stack.length - out.length;
+    }
+
     function canOpenPanel() {
         if (typeof $gameVariables === 'undefined' || !$gameVariables) return false;
         var scene = SceneManager._scene;
         if (!scene) return false;
-        if (typeof Scene_Battle !== 'undefined' && scene instanceof Scene_Battle) return false;
+        // 战斗中同样允许打开（战斗会暂停，关闭后恢复）
         if (typeof Scene_Title !== 'undefined' && scene instanceof Scene_Title) return false;
         if (typeof Scene_Boot !== 'undefined' && scene instanceof Scene_Boot) return false;
         return true;
@@ -930,12 +1208,16 @@
 
     function togglePanel() {
         var scene = SceneManager._scene;
-        if (scene instanceof Scene_MtoolPanel) {
+        if (isPanelScene(scene)) {
             scene.popScene();
             return;
         }
+        if (isPanelPending()) return;   // 已经在打开中，避免重复 push
         if (!canOpenPanel()) return;
+        prunePanelStack();              // 只清理历史遗留的面板层，不动游戏场景
         ensureReady();
+        // 清空输入状态，避免残留在战斗等场景里误触发
+        try { if (typeof Input !== 'undefined' && Input.clear) Input.clear(); } catch (err) { /* 忽略 */ }
         SceneManager.push(Scene_MtoolPanel);
     }
 
@@ -946,7 +1228,7 @@
             return;
         }
         var scene = SceneManager._scene;
-        if (scene instanceof Scene_MtoolPanel) {
+        if (isPanelScene(scene)) {
             scene.onRawKeyDown(ev);
         }
     };
@@ -977,18 +1259,20 @@
         __loaded: true,
         version: VERSION,
 
-        /** 打开面板 */
+        /** 打开面板（幂等：已打开/打开中则忽略，并清理历史遗留层） */
         open: function () {
-            if (!(SceneManager._scene instanceof Scene_MtoolPanel)) {
-                ensureReady();
-                SceneManager.push(Scene_MtoolPanel);
-            }
+            var cur = SceneManager._scene;
+            if (isPanelScene(cur)) return;
+            if (isPanelPending()) return;
+            prunePanelStack();
+            ensureReady();
+            try { if (typeof Input !== 'undefined' && Input.clear) Input.clear(); } catch (err) { /* 忽略 */ }
+            SceneManager.push(Scene_MtoolPanel);
         },
-        /** 关闭面板 */
+        /** 关闭面板（只关掉自己这一层） */
         close: function () {
-            if (SceneManager._scene instanceof Scene_MtoolPanel) {
-                SceneManager._scene.popScene();
-            }
+            var cur = SceneManager._scene;
+            if (isPanelScene(cur)) cur.popScene();
         },
         /** 切换 */
         toggle: togglePanel,
@@ -998,11 +1282,20 @@
         /** 当前条目来源：external / saved / auto / empty */
         getSource: function () { ensureReady(); return entriesSource; },
 
-        /** 按变量 ID 或 special 名（gold / actorHp / actorMp / actorTp）取条目 */
+        /** 按变量 ID 或 special 名取条目；param 类可用 'param:2' 形式精确定位 */
         getEntry: function (entryId) {
             ensureReady();
+            var wantedId = null;
+            if (typeof entryId === 'string' && entryId.indexOf(':') > 0) {
+                var parts = entryId.split(':');
+                wantedId = Number(parts[1]);
+                entryId = parts[0];
+            }
             for (var i = 0; i < entries.length; i++) {
-                if (entries[i].id === entryId || entries[i].special === entryId) return entries[i];
+                var e = entries[i];
+                if (e.id === entryId || e.special === entryId) {
+                    if (wantedId == null || e.paramId === wantedId) return e;
+                }
             }
             return null;
         },
@@ -1014,7 +1307,7 @@
             if (!e) return null;
             var r = setValueInternal(e, value);
             var scene = SceneManager._scene;
-            if (scene instanceof Scene_MtoolPanel) scene._listWindow.refresh();
+            if (isPanelScene(scene)) scene._listWindow.refresh();
             return r;
         },
 
@@ -1026,6 +1319,25 @@
             var rk = rankFor(e, (value == null) ? getValue(e) : value);
             return rk ? rk.ch : null;
         },
+
+        /** 该属性条目是否处于覆盖状态（● 标记） */
+        hasOverride: function (entryId) {
+            ensureReady();
+            var e = this.getEntry(entryId);
+            return e ? hasOverride(e) : false;
+        },
+
+        /** 恢复单个属性条目到原始计算值 */
+        clearOverride: function (entryId) {
+            ensureReady();
+            var e = this.getEntry(entryId);
+            return e ? clearOverride(e) : false;
+        },
+
+        /** 恢复全部属性覆盖，返回清除数量 */
+        clearAllOverrides: function () {
+            return clearAllOverrides();
+        },
         getGameId: gameId,
         getGameTitle: gameTitle,
 
@@ -1036,7 +1348,7 @@
             ready = true;
             saveEntries();
             var scene = SceneManager._scene;
-            if (scene instanceof Scene_MtoolPanel) {
+            if (isPanelScene(scene)) {
                 scene._listWindow.setItems(entries);
                 scene.updateHelpText();
             }
@@ -1051,7 +1363,7 @@
             entriesSource = 'saved';
             saveEntries();
             var scene = SceneManager._scene;
-            if (scene instanceof Scene_MtoolPanel) {
+            if (isPanelScene(scene)) {
                 scene._listWindow.setItems(entries);
                 scene.updateHelpText();
             }
@@ -1095,7 +1407,7 @@
             clearSavedEntries();
             rebuild();
             var scene = SceneManager._scene;
-            if (scene instanceof Scene_MtoolPanel) {
+            if (isPanelScene(scene)) {
                 scene._listWindow.setItems(entries);
                 scene.updateHelpText();
             }

@@ -16,6 +16,25 @@
         { "special": "actorMp", "label": "MP", "step": 100, "min": 0, "max": 999999 },
         { "special": "actorTp", "label": "SP", "step": 10,  "min": 0, "max": 100 },
 
+        { "id": 13, "label": "药(显示值)", "step": 1, "min": 0, "max": 9999 },
+        { "special": "item", "itemId": 21, "label": "回复药(实际)", "step": 1, "min": 0, "max": 99 },
+        { "id": 561, "label": "紧身衣破损％", "step": 1, "min": 0, "max": 100 },
+
+        { "special": "oneShot", "label": "⚡下次敌击必死", "step": 1, "min": 0, "max": 1 },
+
+        { "special": "param", "paramId": 0, "label": "最大HP", "step": 100, "min": 1, "max": 9999999 },
+        { "special": "param", "paramId": 1, "label": "最大MP", "step": 100, "min": 0, "max": 9999999 },
+        { "special": "param", "paramId": 2, "label": "物理攻击", "step": 10, "min": 0, "max": 99999 },
+        { "special": "param", "paramId": 3, "label": "防御力", "step": 10, "min": 0, "max": 99999 },
+        { "special": "param", "paramId": 4, "label": "魔力", "step": 10, "min": 0, "max": 99999 },
+        { "special": "param", "paramId": 5, "label": "魔法抵抗", "step": 10, "min": 0, "max": 99999 },
+        { "special": "param", "paramId": 6, "label": "行动速度", "step": 10, "min": 0, "max": 99999 },
+        { "special": "param", "paramId": 7, "label": "祈力", "step": 10, "min": 0, "max": 99999 },
+        { "special": "xparam", "paramId": 1, "label": "回避率％", "step": 5, "min": 0, "max": 999, "scale": 100 },
+        { "special": "xparam", "paramId": 2, "label": "致命率％", "step": 5, "min": 0, "max": 999, "scale": 100 },
+        { "special": "sparam", "paramId": 6, "label": "物理伤害％", "step": 5, "min": 0, "max": 999, "scale": 100 },
+        { "special": "sparam", "paramId": 7, "label": "魔法伤害％", "step": 5, "min": 0, "max": 999, "scale": 100 },
+
         { "id": 41, "label": "体力",   "step": 1, "min": 0, "max": 9999, "rankId": 461, "thresholds": [4, 10, 15, 25, 35, 50] },
         { "id": 42, "label": "筋力",   "step": 1, "min": 0, "max": 9999, "rankId": 462, "thresholds": [4, 14, 24, 34, 44, 69] },
         { "id": 43, "label": "技術",   "step": 1, "min": 0, "max": 9999, "rankId": 463, "thresholds": [4, 14, 24, 34, 44, 69] },
