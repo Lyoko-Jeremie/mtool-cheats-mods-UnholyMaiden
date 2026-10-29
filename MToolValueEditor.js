@@ -397,6 +397,8 @@
 
         // 固定入口：外部浏览器打开物品浏览器
         entries.push({ special: 'openBrowser', label: '🌐 打开物品浏览器' });
+        // 固定入口：开锁必定成功
+        entries.push({ special: 'forceUnlock', label: '🔓 开锁必定成功' });
 
         ready = true;
         return entries;
@@ -649,6 +651,20 @@
             var ov = AttrOverrides.sparam[sparamId];
             if (ov != null && typeof this._actorId === 'number' && this._actorId === 1) return ov;
             return _baseSparam.call(this, sparamId);
+        };
+    }
+
+    //=========================================================================
+    // 开锁必定成功：hook Game_Variables.value(75)
+    //   CE25 计算完成功率会写入变量 75；CE76/CE295 读取 75 做判定。
+    //   这里让「读取」永远返回 100 → 判定 291 < 100 恒成立、且 75>=100 走直接成功分支。
+    //=========================================================================
+    if (typeof Game_Variables !== 'undefined' && !Game_Variables.prototype.__mteForceUnlockHooked) {
+        Game_Variables.prototype.__mteForceUnlockHooked = true;
+        var _origVarValue = Game_Variables.prototype.value;
+        Game_Variables.prototype.value = function (id) {
+            if (window.__MTE_FORCE_UNLOCK__ && id === 75) return 100;
+            return _origVarValue.call(this, id);
         };
     }
 
@@ -974,6 +990,10 @@
         } else if (e.special === 'openBrowser') {
             this.changeTextColor('#7fd7ff');
             this.drawText('Enter 打开', rect.x, rect.y, valueRight, 'right');
+        } else if (e.special === 'forceUnlock') {
+            var fuOn = !!window.__MTE_FORCE_UNLOCK__;
+            this.changeTextColor(fuOn ? '#8cff8c' : '#8a8a8a');
+            this.drawText(fuOn ? 'ON' : 'OFF', rect.x, rect.y, valueRight, 'right');
         } else {
             valueText = formatNumber(value);
             if (isActorSpecial(e) || e.special === 'item') valueText += ' / ' + formatNumber(maxOf(e));
@@ -1193,6 +1213,13 @@
             var okOpen = openItemBrowser();
             if (okOpen) SoundManager.playOk();
             else SoundManager.playBuzzer();
+            return;
+        }
+        // 开锁必定成功：回车切换
+        if (e.special === 'forceUnlock') {
+            window.__MTE_FORCE_UNLOCK__ = !window.__MTE_FORCE_UNLOCK__;
+            this._listWindow.refresh();
+            SoundManager.playOk();
             return;
         }
         this._mode = 'editValue';
