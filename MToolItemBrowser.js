@@ -178,10 +178,20 @@
     // 立绘组装：照抄 CharacterPictureManager 的图层匹配逻辑
     // 14 个图层组按顺序叠加，每组按条件选一个文件
     //-------------------------------------------------------------------------
-    function dressupLayers(armorId, headId, weaponId, durableId) {
+    function dressupLayers(armorId, headId, weaponId, durableId, sim) {
+        sim = sim || {};
         var actor = (typeof $gameParty !== 'undefined' && $gameParty.leader) ? $gameParty.leader() : null;
-        var hpRate = actor ? actor.hpRate() * 100 : 100;
-        var states = actor ? actor.states().map(function (s) { return s.id; }) : [];
+        // sim.hp / sim.states 可覆盖真实值；未提供时用游戏内真实状态
+        var hpRate = (sim.hp != null && String(sim.hp) !== '')
+            ? Number(sim.hp)
+            : (actor ? actor.hpRate() * 100 : 100);
+        var states;
+        if (sim.states === 'none') states = [];
+        else if (sim.states != null && String(sim.states) !== '')
+            states = String(sim.states).split(',').map(Number).filter(function (x) { return x > 0; });
+        else
+            states = (actor ? actor.states().map(function (s) { return s.id; }) : []);
+        var simVars = sim.vars || {};
         var out = [];
         try {
             var params = PluginManager.parameters('CharacterPictureManager');
@@ -209,22 +219,40 @@
                     if (f.Scene && String(f.Scene) !== '' && String(f.Scene) !== 'Scene_Battle') return false;
                     if (f.Note && String(f.Note) !== '') return false;
                     if (t(f.Message) || t(f.Face) || t(f.Speaker)) return false;
-                    if (n(f.Switch) || n(f.Variable)) return false;
+                    if (n(f.Switch)) return false;
+                    // 变量条件：sim.vars 可覆盖（182 体型 / 183 表情 / 480 内衣 / 561 破损）
+                    if (n(f.Variable)) {
+                        var vid = Number(f.Variable);
+                        var cur = (simVars[vid] != null && String(simVars[vid]) !== '')
+                            ? Number(simVars[vid])
+                            : Number($gameVariables.value(vid));
+                        var operand = Number(f.VariableOperand);
+                        var vtype = Number(f.VariableType);
+                        var vok = false;
+                        switch (vtype) {
+                            case 0: vok = cur === operand; break;
+                            case 1: vok = cur >= operand; break;
+                            case 2: vok = cur <= operand; break;
+                            case 3: vok = cur > operand; break;
+                            case 4: vok = cur < operand; break;
+                            case 5: vok = cur !== operand; break;
+                        }
+                        if (!vok) return false;
+                    }
                     if (f.Script && String(f.Script) !== '') return false;
                     return true;
                 });
-                if (matched.length) {
-                    var f = matched[matched.length - 1];
+                matched.forEach(function (mf) {
                     out.push({
                         group: a.Name,
-                        file: f.FileName,
+                        file: mf.FileName,
                         x: Number(a.X) || 0,
                         y: Number(a.Y) || 0,
                         scaleX: Number(a.ScaleX) || 100,
                         scaleY: Number(a.ScaleY) || 100,
                         opacity: Number(a.Opacity) || 255
                     });
-                }
+                });
             });
         } catch (e) { /* 忽略 */ }
         return { layers: out, context: { hpRate: Math.round(hpRate), states: states } };
@@ -575,6 +603,21 @@
 '.layers{flex:none;display:flex;gap:6px;flex-wrap:wrap;max-height:70px;overflow-y:auto}',
 '.layer{padding:4px 10px;border-radius:8px;background:#262b36;font-size:11px;color:#9aa3b2}',
 '.hint{padding:20px;color:#5c6577;text-align:center}',
+'.sim{flex:none;background:#1a1d24;border-top:1px solid #2c3240;max-height:300px;overflow-y:auto}',
+'.sim-head{padding:9px 14px;cursor:pointer;color:#7fd7ff;font-size:13px;display:flex;gap:8px;align-items:center;user-select:none}',
+'.sim-body{padding:6px 14px 12px;display:none}',
+'.sim-row{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px}',
+'.sim-row label{width:48px;color:#8b94a6;flex:none}',
+'.sim-row input[type=range]{flex:1;max-width:320px}',
+'.sim-row select{background:#151820;color:#d8dbe2;border:1px solid #3a4150;border-radius:6px;padding:4px 8px}',
+'.sim-val{min-width:56px;color:#9aa3b2}',
+'.sim-grid{display:flex;gap:18px;flex-wrap:wrap}',
+'.sim-states{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}',
+'.sim-states label{display:flex;align-items:center;gap:4px;background:#262b36;border-radius:8px;padding:4px 9px;font-size:11px;cursor:pointer;border:1px solid transparent;color:#9aa3b2}',
+'.sim-states label.on{border-color:#7fd7ff;background:#2a4a5e;color:#d8dbe2}',
+'.sim-states input{display:none}',
+'.sim-actions{margin-top:6px}',
+'.sim-actions button{padding:6px 14px;font-size:12px}',
 '</style>',
 '</head>',
 '<body>',
@@ -608,6 +651,21 @@
 '    <div class="layers" id="layers"></div>',
 '  </div>',
 '</div>',
+'<div class="sim">',
+'  <div class="sim-head" id="simHead"><span>▸ 状态模拟</span><span id="simHint" style="color:#5c6577;font-weight:400">（当前为游戏真实状态）</span></div>',
+'  <div class="sim-body" id="simBody">',
+'    <div class="sim-row"><label>HP</label><input type="range" id="simHp" min="0" max="100" value="100"><span class="sim-val" id="simHpV">100%</span></div>',
+'    <div class="sim-row"><label>破损</label><input type="range" id="simDmg" min="0" max="100" value="100"><span class="sim-val" id="simDmgV">100</span></div>',
+'    <div class="sim-grid">',
+'      <div class="sim-row"><label>体型</label><select id="simBody182"></select></div>',
+'      <div class="sim-row"><label>表情</label><select id="simFace183"></select></div>',
+'      <div class="sim-row"><label>内衣</label><select id="simUnder480"></select></div>',
+'    </div>',
+'    <div class="sim-row"><label>覆盖状态</label><input type="checkbox" id="simOverlay" style="width:auto"><span style="color:#8b94a6;font-size:11px">勾选后，用下方勾选的状态替换真实状态（可不选=无状态）</span></div>',
+'    <div class="sim-states" id="simStates"></div>',
+'    <div class="sim-actions"><button id="simReset">恢复真实状态</button></div>',
+'  </div>',
+'</div>',
 '<script>',
 'var armors = [], heads = [], durables = [], weapons = [];',
 'var selArmor = 0, selHead = 0, selDurable = 0, selWeapon = 0;',
@@ -636,7 +694,7 @@
 '  });',
 '}',
 'function refresh() {',
-'  var url = "/api/dressup?armor=" + selArmor + "&head=" + selHead + "&durable=" + selDurable + "&weapon=" + selWeapon;',
+'  var url = "/api/dressup?armor=" + selArmor + "&head=" + selHead + "&durable=" + selDurable + "&weapon=" + selWeapon + simQuery();',
 '  fetch(url).then(function (r) { return r.json(); }).then(function (d) {',
 '    var stage = document.getElementById("stage");',
 '    stage.innerHTML = "";',
@@ -656,12 +714,87 @@
 '    }).join("");',
 '  });',
 '}',
+'var simStatesAll = [];',
+'var simOv = { hp: "", damage: "", body: "", face: "", under: "", states: [] };',
+'var overlayStates = false;',
+'function simQuery() {',
+'  var p = "";',
+'  if (simOv.hp !== "") p += "&hp=" + simOv.hp;',
+'  if (simOv.damage !== "") p += "&damage=" + simOv.damage;',
+'  if (simOv.body !== "") p += "&body=" + simOv.body;',
+'  if (simOv.face !== "") p += "&face=" + simOv.face;',
+'  if (simOv.under !== "") p += "&under=" + simOv.under;',
+'  if (overlayStates) p += "&states=" + (simOv.states.length ? simOv.states.join(",") : "none");',
+'  return p;',
+'}',
+'function updateSimHint() {',
+'  var n = 0;',
+'  if (simOv.hp !== "") n++;',
+'  if (simOv.damage !== "") n++;',
+'  if (simOv.body !== "") n++;',
+'  if (simOv.face !== "") n++;',
+'  if (simOv.under !== "") n++;',
+'  if (overlayStates) n++;',
+'  var el = document.getElementById("simHint");',
+'  el.textContent = n ? ("（模拟中 · " + n + " 项覆盖）") : "（当前为游戏真实状态）";',
+'  el.style.color = n ? "#7fd7ff" : "#5c6577";',
+'}',
+'function toggleSim() {',
+'  var b = document.getElementById("simBody");',
+'  var open = b.style.display !== "block";',
+'  b.style.display = open ? "block" : "none";',
+'  document.getElementById("simHead").querySelector("span").textContent = open ? "▾ 状态模拟" : "▸ 状态模拟";',
+'}',
+'function fillSimSelect(id, n) {',
+'  var sel = document.getElementById(id);',
+'  var html = "<option value=\\"\\">真实</option>";',
+'  for (var i = 1; i <= n; i++) html += "<option value=\\"" + i + "\\">" + i + "</option>";',
+'  sel.innerHTML = html;',
+'  sel.onchange = function () {',
+'    var key = id === "simBody182" ? "body" : (id === "simFace183" ? "face" : "under");',
+'    simOv[key] = sel.value;',
+'    updateSimHint();',
+'    refresh();',
+'  };',
+'}',
+'function renderSimStates() {',
+'  var box = document.getElementById("simStates");',
+'  if (!box) return;',
+'  box.innerHTML = simStatesAll.map(function (st) {',
+'    var on = simOv.states.indexOf(st.id) >= 0;',
+'    return "<label class=\\"" + (on ? "on" : "") + "\\" data-sid=\\"" + st.id + "\\">" +',
+'      "<input type=\\"checkbox\\" " + (on ? "checked" : "") + ">" + st.name + "(" + st.id + ")</label>";',
+'  }).join("");',
+'  box.querySelectorAll("label").forEach(function (lb) {',
+'    lb.onclick = function (e) {',
+'      e.preventDefault();',
+'      var id = Number(lb.dataset.sid);',
+'      var idx = simOv.states.indexOf(id);',
+'      if (idx >= 0) simOv.states.splice(idx, 1); else simOv.states.push(id);',
+'      lb.classList.toggle("on");',
+'      updateSimHint();',
+'      refresh();',
+'    };',
+'  });',
+'}',
+'function resetSim() {',
+'  simOv = { hp: "", damage: "", body: "", face: "", under: "", states: [] };',
+'  document.getElementById("simHp").value = 100;',
+'  document.getElementById("simDmg").value = 100;',
+'  document.getElementById("simHpV").textContent = "100%";',
+'  document.getElementById("simDmgV").textContent = "100";',
+'  ["simBody182", "simFace183", "simUnder480"].forEach(function (id) { document.getElementById(id).value = ""; });',
+'  renderSimStates();',
+'  updateSimHint();',
+'  refresh();',
+'}',
 'function load() {',
 '  return Promise.all([',
 '    fetch("/api/data").then(function (r) { return r.json(); }),',
-'    fetch("/api/armorcats").then(function (r) { return r.json(); })',
+'    fetch("/api/armorcats").then(function (r) { return r.json(); }),',
+'    fetch("/api/states").then(function (r) { return r.json(); })',
 '  ]).then(function (arr) {',
-'    var d = arr[0], cats = arr[1];',
+'    var d = arr[0], cats = arr[1], st = arr[2];',
 '    function pick(ids) { return d.items.filter(function (x) { return x.type === "armor" && x.pic && ids.indexOf(x.id) >= 0; }); }',
 '    armors = pick(cats.body || []);',
 '    heads = pick(cats.head || []);',
@@ -675,6 +808,21 @@
 '    renderList("head");',
 '    renderList("durable");',
 '    renderList("weapon");',
+'    simStatesAll = st.states || [];',
+'    fillSimSelect("simBody182", 4);',
+'    fillSimSelect("simFace183", 14);',
+'    fillSimSelect("simUnder480", 6);',
+'    renderSimStates();',
+'    document.getElementById("simHead").onclick = toggleSim;',
+'    var hp = document.getElementById("simHp");',
+'    hp.oninput = function () { simOv.hp = this.value; document.getElementById("simHpV").textContent = this.value + "%"; updateSimHint(); };',
+'    hp.onchange = refresh;',
+'    var dmg = document.getElementById("simDmg");',
+'    dmg.oninput = function () { simOv.damage = this.value; document.getElementById("simDmgV").textContent = this.value; updateSimHint(); };',
+'    dmg.onchange = refresh;',
+'    document.getElementById("simReset").onclick = resetSim;',
+'    document.getElementById("simOverlay").onchange = function () { overlayStates = this.checked; updateSimHint(); refresh(); };',
+'    updateSimHint();',
 '    refresh();',
 '  });',
 '}',
@@ -792,8 +940,36 @@
                     var p = kv.split('=');
                     if (p[0]) q2[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || '');
                 });
-                var dr = dressupLayers(Number(q2.armor) || 0, Number(q2.head) || 0, Number(q2.weapon) || 0, Number(q2.durable) || 0);
+                var sim = {
+                    hp: q2.hp,
+                    states: q2.states,
+                    vars: { 182: q2.body, 183: q2.face, 480: q2.under, 561: q2.damage }
+                };
+                var dr = dressupLayers(Number(q2.armor) || 0, Number(q2.head) || 0, Number(q2.weapon) || 0, Number(q2.durable) || 0, sim);
                 sendJson(res, { ok: true, layers: dr.layers, context: dr.context });
+                return;
+            }
+
+            if (url === '/api/states') {
+                var sts = [];
+                try {
+                    var p2 = PluginManager.parameters('CharacterPictureManager');
+                    var r2 = JSON.parse(p2.PictureList);
+                    r2.forEach(function (s) {
+                        var a2 = JSON.parse(s);
+                        var fs2 = JSON.parse(a2.FileList).map(function (x) { return JSON.parse(x); });
+                        fs2.forEach(function (f) {
+                            if (!f.FileName) return;
+                            var sid = Number(f.State) || 0;
+                            if (sid > 0 && sts.indexOf(sid) < 0) sts.push(sid);
+                        });
+                    });
+                } catch (e) { /* 忽略 */ }
+                var list = sts.map(function (id) {
+                    var st = $dataStates[id];
+                    return { id: id, name: (st && st.name) || ('状态 #' + id) };
+                }).sort(function (a, b) { return a.id - b.id; });
+                sendJson(res, { ok: true, states: list });
                 return;
             }
 
