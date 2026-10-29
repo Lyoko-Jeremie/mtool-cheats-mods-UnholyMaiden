@@ -395,6 +395,9 @@
             }
         }
 
+        // 固定入口：外部浏览器打开物品浏览器
+        entries.push({ special: 'openBrowser', label: '🌐 打开物品浏览器' });
+
         ready = true;
         return entries;
     }
@@ -698,6 +701,33 @@
     //=========================================================================
     var _ceInterp = null;
 
+    // 用外部浏览器打开物品浏览器首页
+    function openItemBrowser() {
+        var url = 'http://127.0.0.1:8321';
+        try {
+            var os = require('os');
+            var ifaces = os.networkInterfaces();
+            var ip = null;
+            Object.keys(ifaces).forEach(function (k) {
+                (ifaces[k] || []).forEach(function (i) {
+                    if (!ip && i.family === 'IPv4' && !i.internal) ip = i.address;
+                });
+            });
+            if (ip) url = 'http://' + ip + ':8321';
+        } catch (e) { /* 忽略 */ }
+        // 1) NW.js 外部浏览器
+        try {
+            var nw = require('nw.gui');
+            if (nw && nw.Shell && typeof nw.Shell.openExternal === 'function') {
+                nw.Shell.openExternal(url);
+                return true;
+            }
+        } catch (e) { /* 忽略 */ }
+        // 2) 兜底 window.open
+        try { window.open(url, '_blank'); return true; } catch (e) { /* 忽略 */ }
+        return false;
+    }
+
     function runCommonEvent(eventId) {
         if (typeof Game_Interpreter === 'undefined') return false;
         var ev = (typeof $dataCommonEvents !== 'undefined' && $dataCommonEvents) ? $dataCommonEvents[eventId] : null;
@@ -941,6 +971,9 @@
             var running = isCommonEventRunning();
             this.changeTextColor(running ? '#ffd166' : '#7fd7ff');
             this.drawText(running ? '演出中…' : 'Enter 执行', rect.x, rect.y, valueRight, 'right');
+        } else if (e.special === 'openBrowser') {
+            this.changeTextColor('#7fd7ff');
+            this.drawText('Enter 打开', rect.x, rect.y, valueRight, 'right');
         } else {
             valueText = formatNumber(value);
             if (isActorSpecial(e) || e.special === 'item') valueText += ' / ' + formatNumber(maxOf(e));
@@ -1152,6 +1185,13 @@
             var started = runCommonEvent(e.eventId);
             this._listWindow.refresh();
             if (started) SoundManager.playEquip();
+            else SoundManager.playBuzzer();
+            return;
+        }
+        // 外部浏览器入口：回车打开首页
+        if (e.special === 'openBrowser') {
+            var okOpen = openItemBrowser();
+            if (okOpen) SoundManager.playOk();
             else SoundManager.playBuzzer();
             return;
         }
