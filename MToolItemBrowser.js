@@ -171,6 +171,12 @@
         return _picMap;
     }
 
+    // 1x1 透明 PNG：立绘尚未解密到内存时返回它，避免浏览器显示破图标志
+    var TRANSPARENT_PNG = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        'base64'
+    );
+
     // 立绘缓存： key = name@maxWidth
     var _picCache = {};
 
@@ -577,7 +583,10 @@
 '.brand{font-weight:700;color:#7fd7ff;font-size:15px}',
 '.ctx{color:#8b94a6;font-size:12px}',
 '.main{flex:1;display:flex;min-height:0}',
-'.col{width:235px;flex:none;display:flex;flex-direction:column;min-height:0;background:#1a1d24;border-right:1px solid #2c3240}',
+'.col{flex:0 1 235px;min-width:168px;display:flex;flex-direction:column;min-height:0;background:#1a1d24;border-right:1px solid #2c3240}',
+'.col.hidden{display:none}',
+'.bar-btn{padding:4px 12px;font-size:12px;border-radius:8px;border:1px solid #3a4150;background:#2a2f3a;color:#c8cdd8;cursor:pointer;margin-left:auto}',
+'.bar-btn.on{border-color:#7fd7ff;color:#7fd7ff}',
 '.col h3{flex:none;padding:8px 12px;font-size:13px;color:#7fd7ff;border-bottom:1px solid #2c3240;display:flex;justify-content:space-between;align-items:center}',
 '.col h3 span{color:#5c6577;font-weight:400}',
 '.search{flex:none;width:100%;padding:7px 12px;border:none;border-bottom:1px solid #2c3240;background:#151820;color:#d8dbe2;outline:none}',
@@ -586,7 +595,12 @@
 '.item:hover{background:#262b36;border-color:#3a4150}',
 '.item.on{border-color:#7fd7ff;background:#2a4a5e}',
 '.item img{display:block;width:100%;height:76px;object-fit:cover;background:#0b0d11}',
+'.item.empty{background:#151820;border:2px dashed #3a4150}',
+'.item.empty.on{border-color:#7fd7ff}',
+'.item.empty .empty-icon{display:flex;align-items:center;justify-content:center;height:76px;color:#5c6577;font-size:22px}',
 '.item .nm{padding:4px 6px;font-size:11px;color:#c8cdd8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'@media (max-width: 1500px){ .col{flex:0 1 190px;min-width:150px} }',
+'@media (max-width: 1250px){ .col{flex:0 1 170px;min-width:136px} }',
 '@media (max-width: 1100px){',
 '  html,body{height:auto}',
 '  body{display:block}',
@@ -597,8 +611,8 @@
 '  .stage{max-width:100%}',
 '  .item img{height:88px}',
 '}',
-'.center{flex:1;display:flex;flex-direction:column;min-width:0;padding:12px;gap:8px;border-left:1px solid #2c3240}',
-'.stage{flex:none;position:relative;background:#0b0d11;border:1px solid #2c3240;border-radius:12px;overflow:hidden;aspect-ratio:16/9;max-height:100%;margin:0 auto;width:100%}',
+'.center{flex:1;display:flex;flex-direction:column;min-width:0;padding:12px;gap:8px;border-left:1px solid #2c3240;justify-content:center}',
+'.stage{flex:none;position:relative;background:#0b0d11;border:1px solid #2c3240;border-radius:12px;overflow:hidden;aspect-ratio:16/9;max-height:100%;max-width:100%;margin:0 auto;width:100%}',
 '.stage img{position:absolute}',
 '.layers{flex:none;display:flex;gap:6px;flex-wrap:wrap;max-height:70px;overflow-y:auto}',
 '.layer{padding:4px 10px;border-radius:8px;background:#262b36;font-size:11px;color:#9aa3b2}',
@@ -624,6 +638,7 @@
 '<div class="bar">',
 '  <div class="brand">立绘组装</div>',
 '  <div class="ctx" id="ctx">加载中…</div>',
+'  <button id="btnDurable" class="bar-btn" onclick="toggleDurable()">耐久 (2)</button>',
 '</div>',
 '<div class="main">',
 '  <div class="col">',
@@ -641,7 +656,7 @@
 '    <input class="search" id="weaponSearch" placeholder="搜索武器…">',
 '    <div class="grid" id="weaponGrid"></div>',
 '  </div>',
-'  <div class="col">',
+'  <div class="col hidden" id="durableCol">',
 '    <h3>耐久 <span id="durableCount"></span></h3>',
 '    <input class="search" id="durableSearch" placeholder="搜索耐久装备…">',
 '    <div class="grid" id="durableGrid"></div>',
@@ -672,10 +687,20 @@
 'function listOf(which) { return which === "armor" ? armors : (which === "head" ? heads : (which === "durable" ? durables : weapons)); }',
 'function selOf(which) { return which === "armor" ? selArmor : (which === "head" ? selHead : (which === "durable" ? selDurable : selWeapon)); }',
 'function setSel(which, id) { if (which === "armor") selArmor = id; else if (which === "head") selHead = id; else if (which === "durable") selDurable = id; else selWeapon = id; }',
+'function picRetry(img) {',
+'  if (img.naturalWidth > 2) return;',
+'  var n = Number(img.dataset.r || 0);',
+'  if (n >= 10) return;',
+'  img.dataset.r = n + 1;',
+'  setTimeout(function () {',
+'    var base = img.src.split("&r=")[0];',
+'    img.src = base + "&r=" + Date.now();',
+'  }, 320);',
+'}',
 'function itemHtml(x, type) {',
 '  var on = (x.id === selOf(type));',
 '  return "<div class=\\"item" + (on ? " on" : "") + "\\" data-id=\\"" + x.id + "\\" data-t=\\"" + type + "\\">" +',
-'    "<img loading=\\"lazy\\" style=\\"display:block;width:100%;height:76px;object-fit:cover;background:#0b0d11\\" src=\\"/api/picture?name=" + encodeURIComponent(x.pic) + "&w=160\\">" +',
+'    "<img loading=\\"lazy\\" onload=\\"picRetry(this)\\" style=\\"display:block;width:100%;height:76px;object-fit:cover;background:#0b0d11\\" src=\\"/api/picture?name=" + encodeURIComponent(x.pic) + "&w=160\\">" +',
 '    "<div class=\\"nm\\">" + x.name + "</div></div>";',
 '}',
 'function renderList(which) {',
@@ -683,11 +708,15 @@
 '  var q = (document.getElementById(which + "Search").value || "").toLowerCase().trim();',
 '  if (q) list = list.filter(function (x) { return x.name.toLowerCase().indexOf(q) >= 0; });',
 '  var grid = document.getElementById(which + "Grid");',
-'  grid.innerHTML = list.map(function (x) { return itemHtml(x, which); }).join("") || "<div class=\\"hint\\">无匹配</div>";',
+'  var emptyOn = selOf(which) === 0;',
+'  var html = "<div class=\\"item empty" + (emptyOn ? " on" : "") + "\\" data-id=\\"0\\" data-t=\\"" + which + "\\">" +',
+'    "<div class=\\"empty-icon\\">✕</div><div class=\\"nm\\">不穿</div></div>";',
+'  html += list.map(function (x) { return itemHtml(x, which); }).join("");',
+'  grid.innerHTML = html;',
 '  grid.querySelectorAll(".item").forEach(function (el) {',
 '    el.onclick = function () {',
 '      var id = Number(el.dataset.id);',
-'      setSel(which, selOf(which) === id ? 0 : id);',
+'      setSel(which, (id === 0 || selOf(which) === id) ? 0 : id);',
 '      renderList(which);',
 '      refresh();',
 '    };',
@@ -700,6 +729,7 @@
 '    stage.innerHTML = "";',
 '    d.layers.forEach(function (l) {',
 '      var img = document.createElement("img");',
+'      img.onload = function () { picRetry(this); };',
 '      img.src = "/api/picture?name=" + encodeURIComponent(l.file) + "&w=1280";',
 '      img.style.left = (l.x / 1280 * 100) + "%";',
 '      img.style.top = (l.y / 720 * 100) + "%";',
@@ -712,6 +742,7 @@
 '    document.getElementById("layers").innerHTML = d.layers.map(function (l) {',
 '      return "<div class=\\"layer\\">" + l.group + ": " + l.file + "</div>";',
 '    }).join("");',
+'    fitStage();',
 '  });',
 '}',
 'var simStatesAll = [];',
@@ -788,6 +819,30 @@
 '  updateSimHint();',
 '  refresh();',
 '}',
+'function toggleDurable() {',
+'  var el = document.getElementById("durableCol");',
+'  var btn = document.getElementById("btnDurable");',
+'  if (!el || !btn) return;',
+'  var hidden = el.classList.toggle("hidden");',
+'  btn.classList.toggle("on", !hidden);',
+'  btn.textContent = hidden ? ("耐久 (" + durables.length + ")") : "隐藏耐久";',
+'  setTimeout(fitStage, 30);',
+'}',
+'function fitStage() {',
+'  var stage = document.getElementById("stage");',
+'  if (!stage) return;',
+'  var wrap = stage.parentElement;',
+'  var availW = wrap.clientWidth - 24;',
+'  var availH = wrap.clientHeight - 24;',
+'  var layers = document.getElementById("layers");',
+'  if (layers && layers.offsetHeight) availH -= (layers.offsetHeight + 8);',
+'  var ratio = 16 / 9;',
+'  var w = availW, h = w / ratio;',
+'  if (h > availH) { h = availH; w = h * ratio; }',
+'  if (w < 120 || h < 68) { w = availW; h = w / ratio; }',
+'  stage.style.width = Math.round(w) + "px";',
+'  stage.style.height = Math.round(h) + "px";',
+'}',
 'function load() {',
 '  return Promise.all([',
 '    fetch("/api/data").then(function (r) { return r.json(); }),',
@@ -803,6 +858,7 @@
 '    document.getElementById("armorCount").textContent = armors.length + " 件";',
 '    document.getElementById("headCount").textContent = heads.length + " 件";',
 '    document.getElementById("durableCount").textContent = durables.length + " 件";',
+'    document.getElementById("btnDurable").textContent = "耐久 (" + durables.length + ")";',
 '    document.getElementById("weaponCount").textContent = weapons.length + " 件";',
 '    renderList("armor");',
 '    renderList("head");',
@@ -822,6 +878,8 @@
 '    dmg.onchange = refresh;',
 '    document.getElementById("simReset").onclick = resetSim;',
 '    document.getElementById("simOverlay").onchange = function () { overlayStates = this.checked; updateSimHint(); refresh(); };',
+'    window.addEventListener("resize", fitStage);',
+'    fitStage();',
 '    updateSimHint();',
 '    refresh();',
 '  });',
@@ -920,8 +978,13 @@
                 }
                 var pbuf = getPictureBuf(pname, maxW);
                 if (!pbuf) {
-                    res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
-                    res.end('loading');
+                    // 图片仍在异步加载中：返回透明占位图（200），前端检测到 1x1 后会重试
+                    res.writeHead(200, {
+                        'Content-Type': 'image/png',
+                        'Content-Length': TRANSPARENT_PNG.length,
+                        'Cache-Control': 'no-store'
+                    });
+                    res.end(TRANSPARENT_PNG);
                     return;
                 }
                 res.writeHead(200, {
