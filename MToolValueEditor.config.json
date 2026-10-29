@@ -60,6 +60,7 @@
         { "id": 567, "label": "性技巧",         "step": 1,      "min": 0, "max": 9999 },
         { "id": 568, "label": "敏感度",         "step": 1,      "min": 0, "max": 9999 },
         { "id": 569, "label": "变态倾向",       "step": 1,      "min": 0, "max": 9999 },
+    { "id": 247, "label": "变态度",         "step": 1,      "min": 0, "max": 100 },
         { "id": 49,  "label": "金币(变量)",     "step": 10000,  "min": 0, "max": 999999999 },
         { "id": 51,  "label": "以太",           "step": 100000, "min": 0, "max": 999999999 },
         { "special": "gold", "label": "队伍金钱", "step": 10000, "min": 0, "max": 999999999 }
