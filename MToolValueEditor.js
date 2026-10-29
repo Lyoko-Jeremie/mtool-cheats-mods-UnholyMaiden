@@ -1520,4 +1520,31 @@
     };
 
     console.log('[MToolValueEditor] v' + VERSION + ' loaded (' + (window[CONFIG_GLOBAL] ? 'external config present' : 'no external config') + ')');
+
+    // 自动注入并启动「外部物品浏览器」（如果尚未加载）
+    try {
+        if (!window.MToolItemBrowser && typeof require === 'function') {
+            var _fs = require('fs');
+            var _candidates = [
+                'D:/IDMDownloads/MTool_C68C688D/MTool/mtool-mods/MToolItemBrowser.js',
+                'D:\\IDMDownloads\\MTool_C68C688D\\MTool\\mtool-mods\\MToolItemBrowser.js'
+            ];
+            try {
+                if (typeof process !== 'undefined' && process.cwd) {
+                    _candidates.push(process.cwd() + '/js/plugins/MToolItemBrowser.js');
+                }
+            } catch (_e1) { /* 忽略 */ }
+            for (var _i = 0; _i < _candidates.length; _i++) {
+                try {
+                    if (_fs.existsSync(_candidates[_i])) {
+                        (0, eval)(_fs.readFileSync(_candidates[_i], 'utf8'));
+                        break;
+                    }
+                } catch (_e2) { /* 忽略 */ }
+            }
+        }
+        if (window.MToolItemBrowser && window.MToolItemBrowser.start) {
+            window.MToolItemBrowser.start();
+        }
+    } catch (_e3) { /* 忽略 */ }
 })();

@@ -122,12 +122,85 @@ IconSet.png_（加密） → ImageManager 解密 → canvas.toDataURL → /api/i
 
 ### 说明
 
-- 服务只绑定 `127.0.0.1`，不对外网开放。
+- 服务监听 **`0.0.0.0:8321`**，同一局域网内的设备（手机 / 平板）可通过 `http://<本机IP>:8321` 访问；本机用 `http://127.0.0.1:8321`。
+- 局域网设备打不开时，检查 Windows 防火墙是否放行 8321 端口（首次监听时系统可能弹窗询问，选「允许」）。
 - 操作直接作用于 `$gameParty`，即时生效，无需等待帧刷新。
 - 游戏重启后由 loader 自动重新注入并启动，无需手动操作。
 - **支持 MOD 物品的子目录立绘路径**（如 `MOD/Outfits/Tentacles`）：接口允许 `/`，但会拒绝 `..` 和反斜杠以防路径穿越。
 
 ---
+
+## 立绘组装预览（/dressup）
+
+独立页面，可自由选择服装和武器，实时查看立绘组合效果，**完全不影响游戏**。
+
+```
+http://127.0.0.1:8321/dressup
+```
+
+### 实现方式：照抄游戏逻辑
+
+游戏使用 `CharacterPictureManager` 插件管理立绘，其数据结构和匹配逻辑已经完整，因此**直接复用**而不是自己实现：
+
+1. **解析同一份数据**：`PluginManager.parameters('CharacterPictureManager').PictureList`
+2. **应用同样的 16 个条件**：HpUpperLimit / HpLowerLimit / Motion / Action / Inputting / State / Weapon / Armor / Scene / Note / Message / Face / Speaker / Switch / Variable / Script
+3. **同样的图层顺序**：14 个图层组按顺序叠加
+
+```
+背景UI → 身体 → スキン → スキン2 → スキン3 → フェイシャル
+      → 内衣 → 铠甲 → 背包 → 发型 → 头部防具 → 武器 → 盾 → 通缉令
+```
+
+每组按条件选一个文件，组间按顺序叠加 —— 与游戏内 `Sprite_StandPicture.update()` 的行为一致。
+
+### 使用方法
+
+```
+http://127.0.0.1:8321/dressup
+```
+
+三栏布局（左栏分「衣服 / 头饰 / 耐久」三区，**均可同时穿**）：
+
+| 区域 | 装备槽（etypeId） | 数量 |
+|---|---|---|
+| **左栏上** | 衣服（4 防具） | 113 件 |
+| **左栏中** | 头饰（3 头部） | 93 件 |
+| **左栏下** | 耐久（5） | 4 件 |
+| **右栏** | 武器（etypeId 1） | 56 件 |
+
+- 分类直接使用游戏原始数据 `$dataArmors[i].etypeId`（对应 `$dataSystem.equipTypes`）
+- 衣服、头饰、耐久、武器**四者独立选择**，可同时穿戴
+- 点击任意装备项 → 选中并立即刷新预览；**再次点击取消**
+
+### 验证结果
+
+```
+选择 触手服（Armor #849）     → 6 层，铠甲 = MOD/Outfits/Tentacles
+再选 武器（Weapon #2）        → 7 层，武器 = chara_battle_ssword2
+```
+
+### API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/dressup` | 立绘组装页面 |
+| GET | `/api/dressup` | `?armor=849&head=855&durable=98&weapon=2` 返回图层列表 |
+| GET | `/api/armorcats` | 返回 `{ body, head, durable, other }`（按 etypeId 分类） |
+
+返回示例：
+
+```json
+{
+  "layers": [
+    { "group": "身体", "file": "chara_heroine_battle1", "x": 0, "y": 0, "scaleX": 100, "opacity": 255 },
+    { "group": "铠甲", "file": "MOD/Outfits/Tentacles", ... },
+    { "group": "武器", "file": "chara_battle_ssword2", ... }
+  ],
+  "context": { "hpRate": 71, "states": [5, 51, 29] }
+}
+```
+
+> HP 与状态取游戏内角色真实值，所以立绘会随当前血量/状态变化（与游戏内表现一致）。
 
 ## 安装与使用
 

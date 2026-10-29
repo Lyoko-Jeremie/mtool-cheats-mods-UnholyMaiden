@@ -174,6 +174,76 @@
     // 立绘缓存： key = name@maxWidth
     var _picCache = {};
 
+    //-------------------------------------------------------------------------
+    // 立绘组装：照抄 CharacterPictureManager 的图层匹配逻辑
+    // 14 个图层组按顺序叠加，每组按条件选一个文件
+    //-------------------------------------------------------------------------
+    function dressupLayers(armorId, headId, weaponId, durableId) {
+        var actor = (typeof $gameParty !== 'undefined' && $gameParty.leader) ? $gameParty.leader() : null;
+        var hpRate = actor ? actor.hpRate() * 100 : 100;
+        var states = actor ? actor.states().map(function (s) { return s.id; }) : [];
+        var out = [];
+        try {
+            var params = PluginManager.parameters('CharacterPictureManager');
+            var raw = JSON.parse(params.PictureList);
+            raw.forEach(function (s) {
+                var a = JSON.parse(s);
+                // 跳过 UI / 状态类图层（不是角色立绘本身）
+                if (/背景|通缉|UI/i.test(a.Name || '')) return;
+                var files = JSON.parse(a.FileList).map(function (x) { return JSON.parse(x); });
+                var matched = files.filter(function (f) {
+                    if (!f.FileName) return false;
+                    var n = function (v) { return v != null && String(v) !== '' && String(v) !== '0'; };
+                    var t = function (v) { return String(v) === 'true'; };
+                    if (n(f.HpUpperLimit) && !(Number(f.HpUpperLimit) >= hpRate)) return false;
+                    if (n(f.HpLowerLimit) && !(Number(f.HpLowerLimit) <= hpRate)) return false;
+                    if (f.Motion && String(f.Motion) !== '') return false;
+                    if (t(f.Action) || t(f.Inputting)) return false;
+                    if (n(f.State) && states.indexOf(Number(f.State)) < 0) return false;
+                    if (n(f.Weapon) && Number(f.Weapon) !== weaponId) return false;
+                    // 护甲条件：衣服 / 头饰 / 耐久 任一匹配即可
+                    if (n(f.Armor)) {
+                        var aid = Number(f.Armor);
+                        if (aid !== armorId && aid !== headId && aid !== durableId) return false;
+                    }
+                    if (f.Scene && String(f.Scene) !== '' && String(f.Scene) !== 'Scene_Battle') return false;
+                    if (f.Note && String(f.Note) !== '') return false;
+                    if (t(f.Message) || t(f.Face) || t(f.Speaker)) return false;
+                    if (n(f.Switch) || n(f.Variable)) return false;
+                    if (f.Script && String(f.Script) !== '') return false;
+                    return true;
+                });
+                if (matched.length) {
+                    var f = matched[matched.length - 1];
+                    out.push({
+                        group: a.Name,
+                        file: f.FileName,
+                        x: Number(a.X) || 0,
+                        y: Number(a.Y) || 0,
+                        scaleX: Number(a.ScaleX) || 100,
+                        scaleY: Number(a.ScaleY) || 100,
+                        opacity: Number(a.Opacity) || 255
+                    });
+                }
+            });
+        } catch (e) { /* 忽略 */ }
+        return { layers: out, context: { hpRate: Math.round(hpRate), states: states } };
+    }
+
+    /** 按游戏装备槽（$dataSystem.equipTypes 的 etypeId）给护甲分桶 */
+    function armorCategories() {
+        var out = { body: [], head: [], durable: [], other: [] };
+        for (var i = 1; i < $dataArmors.length; i++) {
+            var a = $dataArmors[i];
+            if (!a || !a.name) continue;
+            if (a.etypeId === 3) out.head.push(i);        // 头部
+            else if (a.etypeId === 4) out.body.push(i);   // 防具
+            else if (a.etypeId === 5) out.durable.push(i);// 耐久
+            else out.other.push(i);
+        }
+        return out;
+    }
+
     function getPictureBuf(name, maxW) {
         var key = name + '@' + maxW;
         if (_picCache[key]) return _picCache[key];
@@ -462,6 +532,163 @@
     }
 
     //-------------------------------------------------------------------------
+    // 立绘组装页面
+    //-------------------------------------------------------------------------
+    function dressupPageHtml() {
+        return '<!DOCTYPE html>\n' + [
+'<html lang="zh-CN">',
+'<head>',
+'<meta charset="utf-8">',
+'<meta name="viewport" content="width=device-width, initial-scale=1">',
+'<title>立绘组装预览</title>',
+'<style>',
+'*{box-sizing:border-box;margin:0;padding:0}',
+'html,body{height:100%}',
+'body{font-family:"Microsoft YaHei",sans-serif;background:#14171c;color:#d8dbe2;font-size:13px;display:flex;flex-direction:column}',
+'.bar{flex:none;background:#22262f;padding:10px 16px;border-bottom:1px solid #333a48;display:flex;gap:14px;align-items:center;flex-wrap:wrap}',
+'.brand{font-weight:700;color:#7fd7ff;font-size:15px}',
+'.ctx{color:#8b94a6;font-size:12px}',
+'.main{flex:1;display:flex;min-height:0}',
+'.col{width:235px;flex:none;display:flex;flex-direction:column;min-height:0;background:#1a1d24;border-right:1px solid #2c3240}',
+'.col h3{flex:none;padding:8px 12px;font-size:13px;color:#7fd7ff;border-bottom:1px solid #2c3240;display:flex;justify-content:space-between;align-items:center}',
+'.col h3 span{color:#5c6577;font-weight:400}',
+'.search{flex:none;width:100%;padding:7px 12px;border:none;border-bottom:1px solid #2c3240;background:#151820;color:#d8dbe2;outline:none}',
+'.grid{flex:1;overflow-y:auto;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start;grid-auto-rows:max-content}',
+'.item{cursor:pointer;border:2px solid transparent;border-radius:8px;background:#20242e;overflow:hidden;transition:.12s}',
+'.item:hover{background:#262b36;border-color:#3a4150}',
+'.item.on{border-color:#7fd7ff;background:#2a4a5e}',
+'.item img{display:block;width:100%;height:76px;object-fit:cover;background:#0b0d11}',
+'.item .nm{padding:4px 6px;font-size:11px;color:#c8cdd8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'@media (max-width: 1100px){',
+'  html,body{height:auto}',
+'  body{display:block}',
+'  .main{display:block;min-height:0}',
+'  .col{width:100%;max-height:none;border-right:none;border-bottom:1px solid #2c3240}',
+'  .grid{max-height:320px;overflow-y:auto}',
+'  .center{padding:12px;border-left:none}',
+'  .stage{max-width:100%}',
+'  .item img{height:88px}',
+'}',
+'.center{flex:1;display:flex;flex-direction:column;min-width:0;padding:12px;gap:8px;border-left:1px solid #2c3240}',
+'.stage{flex:none;position:relative;background:#0b0d11;border:1px solid #2c3240;border-radius:12px;overflow:hidden;aspect-ratio:16/9;max-height:100%;margin:0 auto;width:100%}',
+'.stage img{position:absolute}',
+'.layers{flex:none;display:flex;gap:6px;flex-wrap:wrap;max-height:70px;overflow-y:auto}',
+'.layer{padding:4px 10px;border-radius:8px;background:#262b36;font-size:11px;color:#9aa3b2}',
+'.hint{padding:20px;color:#5c6577;text-align:center}',
+'</style>',
+'</head>',
+'<body>',
+'<div class="bar">',
+'  <div class="brand">立绘组装</div>',
+'  <div class="ctx" id="ctx">加载中…</div>',
+'</div>',
+'<div class="main">',
+'  <div class="col">',
+'    <h3>衣服 <span id="armorCount"></span></h3>',
+'    <input class="search" id="armorSearch" placeholder="搜索衣服…">',
+'    <div class="grid" id="armorGrid"></div>',
+'  </div>',
+'  <div class="col">',
+'    <h3>头饰 <span id="headCount"></span></h3>',
+'    <input class="search" id="headSearch" placeholder="搜索头饰…">',
+'    <div class="grid" id="headGrid"></div>',
+'  </div>',
+'  <div class="col">',
+'    <h3>武器 <span id="weaponCount"></span></h3>',
+'    <input class="search" id="weaponSearch" placeholder="搜索武器…">',
+'    <div class="grid" id="weaponGrid"></div>',
+'  </div>',
+'  <div class="col">',
+'    <h3>耐久 <span id="durableCount"></span></h3>',
+'    <input class="search" id="durableSearch" placeholder="搜索耐久装备…">',
+'    <div class="grid" id="durableGrid"></div>',
+'  </div>',
+'  <div class="center">',
+'    <div class="stage" id="stage"></div>',
+'    <div class="layers" id="layers"></div>',
+'  </div>',
+'</div>',
+'<script>',
+'var armors = [], heads = [], durables = [], weapons = [];',
+'var selArmor = 0, selHead = 0, selDurable = 0, selWeapon = 0;',
+'function listOf(which) { return which === "armor" ? armors : (which === "head" ? heads : (which === "durable" ? durables : weapons)); }',
+'function selOf(which) { return which === "armor" ? selArmor : (which === "head" ? selHead : (which === "durable" ? selDurable : selWeapon)); }',
+'function setSel(which, id) { if (which === "armor") selArmor = id; else if (which === "head") selHead = id; else if (which === "durable") selDurable = id; else selWeapon = id; }',
+'function itemHtml(x, type) {',
+'  var on = (x.id === selOf(type));',
+'  return "<div class=\\"item" + (on ? " on" : "") + "\\" data-id=\\"" + x.id + "\\" data-t=\\"" + type + "\\">" +',
+'    "<img loading=\\"lazy\\" style=\\"display:block;width:100%;height:76px;object-fit:cover;background:#0b0d11\\" src=\\"/api/picture?name=" + encodeURIComponent(x.pic) + "&w=160\\">" +',
+'    "<div class=\\"nm\\">" + x.name + "</div></div>";',
+'}',
+'function renderList(which) {',
+'  var list = listOf(which).slice();',
+'  var q = (document.getElementById(which + "Search").value || "").toLowerCase().trim();',
+'  if (q) list = list.filter(function (x) { return x.name.toLowerCase().indexOf(q) >= 0; });',
+'  var grid = document.getElementById(which + "Grid");',
+'  grid.innerHTML = list.map(function (x) { return itemHtml(x, which); }).join("") || "<div class=\\"hint\\">无匹配</div>";',
+'  grid.querySelectorAll(".item").forEach(function (el) {',
+'    el.onclick = function () {',
+'      var id = Number(el.dataset.id);',
+'      setSel(which, selOf(which) === id ? 0 : id);',
+'      renderList(which);',
+'      refresh();',
+'    };',
+'  });',
+'}',
+'function refresh() {',
+'  var url = "/api/dressup?armor=" + selArmor + "&head=" + selHead + "&durable=" + selDurable + "&weapon=" + selWeapon;',
+'  fetch(url).then(function (r) { return r.json(); }).then(function (d) {',
+'    var stage = document.getElementById("stage");',
+'    stage.innerHTML = "";',
+'    d.layers.forEach(function (l) {',
+'      var img = document.createElement("img");',
+'      img.src = "/api/picture?name=" + encodeURIComponent(l.file) + "&w=1280";',
+'      img.style.left = (l.x / 1280 * 100) + "%";',
+'      img.style.top = (l.y / 720 * 100) + "%";',
+'      img.style.width = l.scaleX + "%";',
+'      img.style.height = l.scaleY + "%";',
+'      img.style.opacity = (l.opacity / 255);',
+'      stage.appendChild(img);',
+'    });',
+'    document.getElementById("ctx").textContent = "HP " + d.context.hpRate + "% · 状态 [" + d.context.states.join(",") + "] · " + d.layers.length + " 层";',
+'    document.getElementById("layers").innerHTML = d.layers.map(function (l) {',
+'      return "<div class=\\"layer\\">" + l.group + ": " + l.file + "</div>";',
+'    }).join("");',
+'  });',
+'}',
+'function load() {',
+'  return Promise.all([',
+'    fetch("/api/data").then(function (r) { return r.json(); }),',
+'    fetch("/api/armorcats").then(function (r) { return r.json(); })',
+'  ]).then(function (arr) {',
+'    var d = arr[0], cats = arr[1];',
+'    function pick(ids) { return d.items.filter(function (x) { return x.type === "armor" && x.pic && ids.indexOf(x.id) >= 0; }); }',
+'    armors = pick(cats.body || []);',
+'    heads = pick(cats.head || []);',
+'    durables = pick(cats.durable || []);',
+'    weapons = d.items.filter(function (x) { return x.type === "weapon" && x.pic; });',
+'    document.getElementById("armorCount").textContent = armors.length + " 件";',
+'    document.getElementById("headCount").textContent = heads.length + " 件";',
+'    document.getElementById("durableCount").textContent = durables.length + " 件";',
+'    document.getElementById("weaponCount").textContent = weapons.length + " 件";',
+'    renderList("armor");',
+'    renderList("head");',
+'    renderList("durable");',
+'    renderList("weapon");',
+'    refresh();',
+'  });',
+'}',
+'["armor","head","durable","weapon"].forEach(function (k) {',
+'  document.getElementById(k + "Search").addEventListener("input", function () { renderList(k); });',
+'});',
+'load();',
+'</script>',
+'</body>',
+'</html>'
+        ].join('\n');
+    }
+
+    //-------------------------------------------------------------------------
     // HTTP 服务
     //-------------------------------------------------------------------------
     function readBody(req, cb) {
@@ -502,7 +729,7 @@
             }
 
             if (url === '/' || url === '/index.html') {
-                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
                 res.end(pageHtml());
                 return;
             }
@@ -558,6 +785,29 @@
                 return;
             }
 
+            if (url === '/api/dressup') {
+                var qs2 = (req.url.split('?')[1] || '');
+                var q2 = {};
+                qs2.split('&').forEach(function (kv) {
+                    var p = kv.split('=');
+                    if (p[0]) q2[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || '');
+                });
+                var dr = dressupLayers(Number(q2.armor) || 0, Number(q2.head) || 0, Number(q2.weapon) || 0, Number(q2.durable) || 0);
+                sendJson(res, { ok: true, layers: dr.layers, context: dr.context });
+                return;
+            }
+
+            if (url === '/api/armorcats') {
+                sendJson(res, armorCategories());
+                return;
+            }
+
+            if (url === '/dressup' || url === '/dressup.html') {
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+                res.end(dressupPageHtml());
+                return;
+            }
+
             if (url === '/api/add' && req.method === 'POST') {
                 readBody(req, function (b) {
                     sendJson(res, actionAdd(b.type, Number(b.id), Number(b.count)));
@@ -588,6 +838,23 @@
     //-------------------------------------------------------------------------
     // 启动 / 停止
     //-------------------------------------------------------------------------
+    /** 取本机局域网 IPv4 地址（用于展示访问入口） */
+    function getLanIp() {
+        try {
+            var os = require('os');
+            var ifaces = os.networkInterfaces();
+            var ip = null;
+            Object.keys(ifaces).forEach(function (name) {
+                (ifaces[name] || []).forEach(function (i) {
+                    if (!ip && i.family === 'IPv4' && !i.internal) ip = i.address;
+                });
+            });
+            return ip;
+        } catch (e) {
+            return null;
+        }
+    }
+
     function start(port) {
         if (server) return { ok: true, port: actualPort || port || DEFAULT_PORT, note: 'already running' };
         if (!isReady()) return { ok: false, error: '游戏未就绪（$dataItems 不存在）' };
@@ -599,11 +866,22 @@
                 console.error('[MToolItemBrowser] server error:', err && err.message);
                 server = null;
             });
-            server.listen(p, '127.0.0.1', function () {
+            // 监听 0.0.0.0：允许局域网访问（同一网络下的手机/平板也可打开）
+            server.listen(p, '0.0.0.0', function () {
                 actualPort = server.address().port;
-                console.log('[MToolItemBrowser] listening on http://127.0.0.1:' + actualPort);
+                var lan = getLanIp();
+                console.log('[MToolItemBrowser] listening on 0.0.0.0:' + actualPort +
+                            (lan ? '  (LAN: http://' + lan + ':' + actualPort + ')' : ''));
             });
-            return { ok: true, port: p, url: 'http://127.0.0.1:' + p };
+            var lanIp = getLanIp();
+            return {
+                ok: true,
+                port: p,
+                bind: '0.0.0.0',
+                url: 'http://' + (lanIp || '127.0.0.1') + ':' + p,
+                localUrl: 'http://127.0.0.1:' + p,
+                lanIp: lanIp
+            };
         } catch (err) {
             server = null;
             return { ok: false, error: String((err && err.message) || err) };
@@ -619,10 +897,14 @@
     }
 
     function status() {
+        var lan = getLanIp();
         return {
             running: !!server,
             port: actualPort,
-            url: actualPort ? ('http://127.0.0.1:' + actualPort) : null,
+            bind: '0.0.0.0',
+            url: actualPort ? ('http://' + (lan || '127.0.0.1') + ':' + actualPort) : null,
+            localUrl: actualPort ? ('http://127.0.0.1:' + actualPort) : null,
+            lanIp: lan,
             ready: isReady(),
             cachedItems: (_allCache ? _allCache.length : 0)
         };
