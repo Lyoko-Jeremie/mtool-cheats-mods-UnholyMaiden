@@ -1,0 +1,64 @@
+﻿// =====================================================================
+// MToolValueEditor 预设插件（可选）
+// 必须在 MToolValueEditor.js 之前加载（loader 会按顺序注入）
+// 结构：window.__MTE_PRESETS__ = [{ name, matchTitles, matchDirs, entries }]
+// =====================================================================
+(function () {
+    var g = (typeof window !== 'undefined') ? window : this;
+    g.__MTE_PRESETS__ = g.__MTE_PRESETS__ || [];
+    g.__MTE_PRESETS__.push({
+        name: "不洁圣女 / UnholyMaiden",
+        matchTitles: ["不洁圣女", "UnholyMaiden", "Unholy Maiden", "亵渎之种"],
+        matchDirs: ["Unholy_Maiden", "UnholyMaiden", "亵渎之种"],
+        entries: [
+            {"id":69,"label":"等级 Lv","step":1,"min":1,"max":9999},
+            {"id":68,"label":"等级经验","step":1000,"min":0,"max":999999999},
+            {"id":271,"label":"等级上限","step":10,"min":1,"max":9999},
+            {"special":"actorHp","label":"HP","step":100,"min":0,"max":999999},
+            {"special":"actorMp","label":"MP","step":100,"min":0,"max":999999},
+            {"special":"actorTp","label":"SP","step":10,"min":0,"max":100},
+            {"id":13,"label":"药(显示值)","step":1,"min":0,"max":9999},
+            {"special":"item","itemId":21,"label":"回复药(实际)","step":1,"min":0,"max":99},
+            {"id":561,"label":"紧身衣破损％","step":1,"min":0,"max":100},
+            {"id":74,"label":"开锁加成A(技巧)","step":5,"min":0,"max":100},
+            {"id":317,"label":"开锁加成B(装备)","step":5,"min":0,"max":100},
+            {"special":"oneShot","label":"⚡下次敌击必死","step":1,"min":0,"max":1},
+            {"special":"gameSwitch","switchId":262,"label":"CG闸门 开关#262"},
+            {"special":"param","paramId":0,"label":"最大HP","step":100,"min":1,"max":9999999},
+            {"special":"param","paramId":1,"label":"最大MP","step":100,"min":0,"max":9999999},
+            {"special":"param","paramId":2,"label":"物理攻击","step":10,"min":0,"max":99999},
+            {"special":"param","paramId":3,"label":"防御力","step":10,"min":0,"max":99999},
+            {"special":"param","paramId":4,"label":"魔力","step":10,"min":0,"max":99999},
+            {"special":"param","paramId":5,"label":"魔法抵抗","step":10,"min":0,"max":99999},
+            {"special":"param","paramId":6,"label":"行动速度","step":10,"min":0,"max":99999},
+            {"special":"param","paramId":7,"label":"祈力","step":10,"min":0,"max":99999},
+            {"special":"xparam","paramId":1,"label":"回避率％","step":5,"min":0,"max":999,"scale":100},
+            {"special":"xparam","paramId":2,"label":"致命率％","step":5,"min":0,"max":999,"scale":100},
+            {"special":"sparam","paramId":6,"label":"物理伤害％","step":5,"min":0,"max":999,"scale":100},
+            {"special":"sparam","paramId":7,"label":"魔法伤害％","step":5,"min":0,"max":999,"scale":100},
+            {"id":41,"label":"体力","step":1,"min":0,"max":9999,"rankId":461,"thresholds":[4,10,15,25,35,50]},
+            {"id":42,"label":"筋力","step":1,"min":0,"max":9999,"rankId":462,"thresholds":[4,14,24,34,44,69]},
+            {"id":43,"label":"技術","step":1,"min":0,"max":9999,"rankId":463,"thresholds":[4,14,24,34,44,69]},
+            {"id":44,"label":"知性","step":1,"min":0,"max":9999,"rankId":464,"thresholds":[4,14,24,34,44,69]},
+            {"id":45,"label":"話術","step":1,"min":0,"max":9999,"rankId":465,"thresholds":[4,10,15,25,35,50]},
+            {"id":46,"label":"美貌","step":1,"min":0,"max":9999,"rankId":466,"thresholds":[4,10,15,25,35,50]},
+            {"id":202,"label":"交涉能力","step":1,"min":0,"max":9999},
+            {"id":260,"label":"性的魅力","step":1,"min":0,"max":9999},
+            {"id":201,"label":"对人战力","step":1,"min":0,"max":9999},
+            {"id":82,"label":"名声值","step":1,"min":0,"max":9999},
+            {"id":47,"label":"欲望","step":1,"min":0,"max":9999},
+            {"id":50,"label":"疲劳","step":1,"min":0,"max":9999},
+            {"id":81,"label":"贞淑","step":1,"min":0,"max":9999},
+            {"id":83,"label":"秩序 / 混沌","step":1,"min":0,"max":9999},
+            {"id":203,"label":"理性","step":1,"min":0,"max":9999},
+            {"id":362,"label":"淫靡","step":1,"min":0,"max":9999},
+            {"id":567,"label":"性技巧","step":1,"min":0,"max":9999},
+            {"id":568,"label":"敏感度","step":1,"min":0,"max":9999},
+            {"id":569,"label":"变态倾向","step":1,"min":0,"max":9999},
+            {"id":247,"label":"变态度","step":1,"min":0,"max":100},
+            {"id":49,"label":"金币(变量)","step":10000,"min":0,"max":999999999},
+            {"id":51,"label":"以太","step":100000,"min":0,"max":999999999},
+            {"special":"gold","label":"队伍金钱","step":10000,"min":0,"max":999999999}
+        ]
+    });
+})();

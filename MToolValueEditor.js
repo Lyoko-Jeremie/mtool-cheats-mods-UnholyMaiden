@@ -85,100 +85,63 @@
     }
 
     /**
-     * 没有外部注入时，自己去找配置文件（脱机启动也能用）。
-     * 候选：游戏 js/plugins 下、游戏根目录、MTool 的 mtool-mods 目录。
+     * 加载外部 JS 预设插件（MToolValueEditor.preset.js）。
+     * 预设文件执行后会把自己注册到 window.__MTE_PRESETS__。
      */
-    function loadConfigFile() {
+    function loadPresetFile() {
         try {
+            // 已有注册的预设 → 直接返回（避免重复 eval 导致数组累加）
+            if (window.__MTE_PRESETS__ && window.__MTE_PRESETS__.length) return window.__MTE_PRESETS__;
             if (typeof require !== 'function') return null;
             var fs = require('fs');
             var path = require('path');
             var candidates = [];
             try {
                 if (typeof process !== 'undefined' && process.cwd) {
-                    candidates.push(path.join(process.cwd(), 'js', 'plugins', 'MToolValueEditor.config.json'));
-                    candidates.push(path.join(process.cwd(), 'MToolValueEditor.config.json'));
-                    candidates.push(path.join(process.cwd(), '..', 'mtool-mods', 'MToolValueEditor.config.json'));
+                    candidates.push(path.join(process.cwd(), 'js', 'plugins', 'MToolValueEditor.preset.js'));
+                    candidates.push(path.join(process.cwd(), 'MToolValueEditor.preset.js'));
+                    candidates.push(path.join(process.cwd(), '..', 'mtool-mods', 'MToolValueEditor.preset.js'));
                 }
             } catch (err) { /* 忽略 */ }
-            candidates.push('D:/IDMDownloads/MTool_C68C688D/MTool/mtool-mods/MToolValueEditor.config.json');
-            candidates.push('D:\\IDMDownloads\\MTool_C68C688D\\MTool\\mtool-mods\\MToolValueEditor.config.json');
+            candidates.push('D:/IDMDownloads/MTool_C68C688D/MTool/mtool-mods/MToolValueEditor.preset.js');
+            candidates.push('D:\\IDMDownloads\\MTool_C68C688D\\MTool\\mtool-mods\\MToolValueEditor.preset.js');
 
-            var title = gameTitle();
             for (var i = 0; i < candidates.length; i++) {
                 if (!candidates[i]) continue;
                 try {
                     if (!fs.existsSync(candidates[i])) continue;
-                    var cfg = JSON.parse(fs.readFileSync(candidates[i], 'utf8'));
-                    var matched = matchGameConfig(cfg, title);
-                    if (matched) return matched;
+                    (0, eval)(fs.readFileSync(candidates[i], 'utf8'));
+                    if (window.__MTE_PRESETS__ && window.__MTE_PRESETS__.length) return window.__MTE_PRESETS__;
                 } catch (err) { /* 试下一个 */ }
             }
         } catch (err) { /* 忽略 */ }
         return null;
     }
 
+    /** 从 __MTE_PRESETS__ 按游戏标题/目录匹配预设插件 */
+    function findPreset(title, dir) {
+        var list = loadPresetFile() || window.__MTE_PRESETS__;
+        if (!list || !list.length) return null;
+        for (var i = 0; i < list.length; i++) {
+            var p = list[i];
+            if (!p) continue;
+            var ts = p.matchTitles || [];
+            for (var j = 0; j < ts.length; j++) {
+                if (title && String(title).indexOf(ts[j]) >= 0) return p;
+            }
+            var ds = p.matchDirs || [];
+            for (var k = 0; k < ds.length; k++) {
+                if (dir && String(dir).indexOf(ds[k]) >= 0) return p;
+            }
+            if (!ts.length && !ds.length) return p;
+        }
+        return null;
+    }
+
     //=========================================================================
     // 内置游戏预设（独立 mod 的核心：不依赖任何外部配置也能开箱即用）
     //=========================================================================
-    var BUILTIN_PRESETS = [
-        {
-            gameId: 'unholy-maiden',
-            matchTitles: ['不洁圣女', 'UnholyMaiden', 'Unholy Maiden', '亵渎之种'],
-            entries: [
-                { id: 69,  label: '等级 Lv',   step: 1,      min: 1, max: 9999 },
-                { id: 68,  label: '等级经验',   step: 1000,   min: 0, max: 999999999 },
-                { id: 271, label: '等级上限',   step: 10,     min: 1, max: 9999 },
-                { special: 'actorHp', label: 'HP', step: 100, min: 0, max: 999999 },
-                { special: 'actorMp', label: 'MP', step: 100, min: 0, max: 999999 },
-                { special: 'actorTp', label: 'SP', step: 10,  min: 0, max: 100 },
-                { id: 13, label: '药(显示值)', step: 1, min: 0, max: 9999 },
-                { special: 'item', itemId: 21, label: '回复药(实际)', step: 1, min: 0, max: 99 },
-                { id: 561, label: '紧身衣破损％', step: 1, min: 0, max: 100 },
-                { id: 74,  label: '开锁加成A(技巧)', step: 5, min: 0, max: 100 },
-                { id: 317, label: '开锁加成B(装备)', step: 5, min: 0, max: 100 },
-                { special: 'oneShot', label: '⚡下次敌击必死', step: 1, min: 0, max: 1 },
-                { special: 'gameSwitch', switchId: 262, label: 'CG闸门 开关#262' },
-                // 【暂时禁用】commonEvent 强制演出实测无效，入口已移除；代码保留待修复
-                // { special: 'commonEvent', eventId: 130, label: '强制CG演出(事件#130)' },
-                { special: 'param', paramId: 0, label: '最大HP', step: 100, min: 1, max: 9999999 },
-                { special: 'param', paramId: 1, label: '最大MP', step: 100, min: 0, max: 9999999 },
-                { special: 'param', paramId: 2, label: '物理攻击', step: 10, min: 0, max: 99999 },
-                { special: 'param', paramId: 3, label: '防御力', step: 10, min: 0, max: 99999 },
-                { special: 'param', paramId: 4, label: '魔力', step: 10, min: 0, max: 99999 },
-                { special: 'param', paramId: 5, label: '魔法抵抗', step: 10, min: 0, max: 99999 },
-                { special: 'param', paramId: 6, label: '行动速度', step: 10, min: 0, max: 99999 },
-                { special: 'param', paramId: 7, label: '祈力', step: 10, min: 0, max: 99999 },
-                { special: 'xparam', paramId: 1, label: '回避率％', step: 5, min: 0, max: 999, scale: 100 },
-                { special: 'xparam', paramId: 2, label: '致命率％', step: 5, min: 0, max: 999, scale: 100 },
-                { special: 'sparam', paramId: 6, label: '物理伤害％', step: 5, min: 0, max: 999, scale: 100 },
-                { special: 'sparam', paramId: 7, label: '魔法伤害％', step: 5, min: 0, max: 999, scale: 100 },
-                { id: 41,  label: '体力', step: 1, min: 0, max: 9999, rankId: 461, thresholds: [4, 10, 15, 25, 35, 50] },
-                { id: 42,  label: '筋力', step: 1, min: 0, max: 9999, rankId: 462, thresholds: [4, 14, 24, 34, 44, 69] },
-                { id: 43,  label: '技術', step: 1, min: 0, max: 9999, rankId: 463, thresholds: [4, 14, 24, 34, 44, 69] },
-                { id: 44,  label: '知性', step: 1, min: 0, max: 9999, rankId: 464, thresholds: [4, 14, 24, 34, 44, 69] },
-                { id: 45,  label: '話術', step: 1, min: 0, max: 9999, rankId: 465, thresholds: [4, 10, 15, 25, 35, 50] },
-                { id: 46,  label: '美貌', step: 1, min: 0, max: 9999, rankId: 466, thresholds: [4, 10, 15, 25, 35, 50] },
-                { id: 202, label: '交涉能力', step: 1, min: 0, max: 9999 },
-                { id: 260, label: '性的魅力', step: 1, min: 0, max: 9999 },
-                { id: 201, label: '对人战力', step: 1, min: 0, max: 9999 },
-                { id: 82,  label: '名声值', step: 1, min: 0, max: 9999 },
-                { id: 47,  label: '欲望', step: 1, min: 0, max: 9999 },
-                { id: 50,  label: '疲劳', step: 1, min: 0, max: 9999 },
-                { id: 81,  label: '贞淑', step: 1, min: 0, max: 9999 },
-                { id: 83,  label: '秩序 / 混沌', step: 1, min: 0, max: 9999 },
-                { id: 203, label: '理性', step: 1, min: 0, max: 9999 },
-                { id: 362, label: '淫靡', step: 1, min: 0, max: 9999 },
-                { id: 567, label: '性技巧', step: 1, min: 0, max: 9999 },
-                { id: 568, label: '敏感度', step: 1, min: 0, max: 9999 },
-                { id: 569, label: '变态倾向', step: 1, min: 0, max: 9999 },
-                { id: 247, label: '变态度', step: 1, min: 0, max: 100 },
-                { id: 49,  label: '金币(变量)', step: 10000, min: 0, max: 999999999 },
-                { id: 51,  label: '以太', step: 100000, min: 0, max: 999999999 },
-                { special: 'gold', label: '队伍金钱', step: 10000, min: 0, max: 999999999 }
-            ]
-        }
-    ];
+    var BUILTIN_PRESETS = [];   // 已迁移到 MToolValueEditor.preset.js（外部 JS 预设插件）
 
     function findBuiltinPreset(title) {
         for (var i = 0; i < BUILTIN_PRESETS.length; i++) {
@@ -353,7 +316,7 @@
     var ready = false;
 
     function buildEntries() {
-        var ext = getExternalConfig() || loadConfigFile();
+        var ext = getExternalConfig();
         var saved = readSavedEntries();
         var gameKey = gameId();
 
@@ -376,11 +339,20 @@
             }
         }
 
-        // 独立 mod 兜底：内置预设（按游戏标题匹配）
+        // 外部 JS 预设插件（window.__MTE_PRESETS__，或自动加载 MToolValueEditor.preset.js）
         if (!entries.length) {
-            var preset = findBuiltinPreset(gameTitle());
+            var preset = findPreset(gameTitle(), '');
             if (preset && preset.entries && preset.entries.length) {
                 entries = normalizeList(preset.entries);
+                entriesSource = 'preset';
+            }
+        }
+
+        // 内置兜底（当前为空，保留扩展位）
+        if (!entries.length) {
+            var builtin = findBuiltinPreset(gameTitle());
+            if (builtin && builtin.entries && builtin.entries.length) {
+                entries = normalizeList(builtin.entries);
                 entriesSource = 'builtin';
             }
         }

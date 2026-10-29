@@ -11,7 +11,7 @@
 | 文件 | 作用 |
 |---|---|
 | `MToolValueEditor.js` | **核心插件**（RPG Maker MZ 插件）。注入游戏后提供 F9 面板、锁定、属性覆盖等全部功能。 |
-| `MToolValueEditor.config.json` | **游戏的数值映射配置**。定义面板里显示哪些条目、对应哪个变量/属性。 |
+| `MToolValueEditor.preset.js` | **游戏的数值映射配置（JS 预设插件）**。执行后注册 `window.__MTE_PRESETS__`，定义面板条目。 |
 | `MToolItemBrowser.js` | **外部物品浏览器**。在游戏进程内起本地 HTTP 服务，用浏览器管理背包物品。 |
 | `mtool-value-editor-loader.js` | **MTool 脚本 mod**。MTool 启动时自动加载，负责把插件注入当前游戏。 |
 | `install-value-editor.ps1` | **独立安装器**。把插件以正规 MZ 插件方式装进游戏目录，无需 MTool 常驻。 |
@@ -221,7 +221,7 @@ http://127.0.0.1:8321/dressup
 
 ### 方式 A：通过 MTool 脚本 mod（推荐，适合临时使用）
 
-1. 把 `MToolValueEditor.js`、`MToolValueEditor.config.json` 放在 `mtool-mods` 目录。
+1. 把 `MToolValueEditor.js`、`MToolValueEditor.preset.js` 放在 `mtool-mods` 目录。
 2. 把 `mtool-value-editor-loader.js` 注册进 MTool 的脚本 mod 列表（`CollData.json`），并重启 MTool。
 3. 进入游戏后按 **F9** 呼出面板。
 
@@ -235,7 +235,7 @@ powershell -ExecutionPolicy Bypass -File .\install-value-editor.ps1 -GameDir "E:
 
 安装器会：
 
-1. 复制 `MToolValueEditor.js` 与 `.config.json` 到 `<GameDir>\js\plugins\`
+1. 复制 `MToolValueEditor.js` 与 `.preset.js` 到 `<GameDir>\js\plugins\`
 2. 备份原 `plugins.js`
 3. 在 `plugins.js` 末尾注册插件（幂等，重复执行不会重复注册）
 4. 校验失败自动回滚
@@ -311,22 +311,32 @@ powershell -ExecutionPolicy Bypass -File .\install-value-editor.ps1 -GameDir "E:
 ```
 window.__MTOOL_VALUE_EDITOR_CONFIG__   ← 运行时注入（最高）
         ↓
-配置文件（MToolValueEditor.config.json）
+预设插件（MToolValueEditor.preset.js，注册 window.__MTE_PRESETS__）
         ↓
-内置预设（插件内 BUILTIN_PRESETS，按游戏标题匹配）
+内置兜底（插件内 BUILTIN_PRESETS，当前为空，保留扩展位）
         ↓
 自动探测（扫描变量名关键词，生成默认条目）
 ```
 
-配置文件支持两种结构：
+预设插件是 JS 格式，执行后把自己注册到全局数组：
 
-```jsonc
-// 结构一：只给一个游戏
-{ "entries": [ ... ] }
-
-// 结构二：按游戏分
-{ "games": { "unholy-maiden": [ ... ], "another-game": [ ... ] } }
+```js
+// MToolValueEditor.preset.js
+(function () {
+    window.__MTE_PRESETS__ = window.__MTE_PRESETS__ || [];
+    window.__MTE_PRESETS__.push({
+        name: '不洁圣女 / UnholyMaiden',
+        matchTitles: ['不洁圣女', 'UnholyMaiden'],
+        matchDirs: ['Unholy_Maiden'],
+        entries: [
+            { id: 69, label: '等级 Lv', step: 1, min: 1, max: 9999 },
+            // ...
+        ]
+    });
+})();
 ```
+
+多个预设可以共存 —— 每个推入一个对象，按 `matchTitles` / `matchDirs` 匹配当前游戏。
 
 ---
 
@@ -350,7 +360,7 @@ window.__MTOOL_VALUE_EDITOR_CONFIG__   ← 运行时注入（最高）
 
 **方式 B（插件安装）**：
 
-1. 删除 `<GameDir>\js\plugins\MToolValueEditor.js` 与 `.config.json`
+1. 删除 `<GameDir>\js\plugins\MToolValueEditor.js` 与 `.preset.js`
 2. 用安装器生成的 `plugins.js.bak-before-mte-*` 覆盖 `plugins.js`
 3. 或者手动从 `plugins.js` 中删除 `MToolValueEditor` 那一项
 
@@ -400,3 +410,5 @@ window.__MTOOL_VALUE_EDITOR_CONFIG__   ← 运行时注入（最高）
   ```
 
 - 热重载不会叠面板层：`Scene_MtoolPanel` 带 `__mtePanel` 标记，`open()` 幂等，`prunePanelStack()` 会清掉历史遗留层。
+
+

@@ -169,43 +169,28 @@
             return;
         }
 
-        // 4.2 读配置
-        var config = null;
+        // 4.2 读预设插件（JS 格式，可选：MToolValueEditor.preset.js）
+        var presetSrc = null;
         try {
-            var cfgPath = ctx.path.join(ctx.dir, 'MToolValueEditor.config.json');
-            if (ctx.fs.existsSync(cfgPath)) {
-                config = JSON.parse(ctx.fs.readFileSync(cfgPath, 'utf8'));
+            var presetPath = ctx.path.join(ctx.dir, 'MToolValueEditor.preset.js');
+            if (ctx.fs.existsSync(presetPath)) {
+                presetSrc = ctx.fs.readFileSync(presetPath, 'utf8');
+                log('找到预设插件：MToolValueEditor.preset.js');
             }
         } catch (err) {
-            log('读取配置失败：' + err.message);
+            log('读取预设插件失败：' + err.message);
         }
 
         // 4.3 识别当前游戏
         var title = evalInGame(v8, '($dataSystem && $dataSystem.gameTitle) || ""') || '';
-        var gameDir = evalInGame(v8, '(function(){try{return location.pathname;}catch(e){return "";}})()') || '';
+        log('当前游戏：' + (title || '未知'));
 
-        var matched = matchGame(config, title, gameDir);
-        var injectedConfig = null;
-        if (matched) {
-            injectedConfig = {
-                gameId: matched.key,
-                title: title,
-                entries: matched.game.entries || []
-            };
-            log('匹配游戏预设：' + matched.key + '（' + title + '），条目 ' + injectedConfig.entries.length + ' 个');
-        } else if (config && config.default && Array.isArray(config.default.entries) && config.default.entries.length) {
-            injectedConfig = { gameId: 'default', title: title, entries: config.default.entries };
-            log('未匹配到预设，使用 default（' + injectedConfig.entries.length + ' 个条目）');
-        } else {
-            log('未匹配到预设，交由插件自动探测（游戏：' + (title || '未知') + '）');
+        // 4.4 注入预设插件（必须在插件本体之前，注册 window.__MTE_PRESETS__）
+        if (presetSrc) {
+            runInGame(v8, presetSrc);
         }
 
-        // 4.4 注入配置
-        if (injectedConfig) {
-            runInGame(v8, 'window.__MTOOL_VALUE_EDITOR_CONFIG__ = ' + JSON.stringify(injectedConfig) + ';');
-        }
-
-        // 4.5 注入插件（首次加载）
+        // 4.5 注入插件本体（首次加载）
         var loaded = evalInGame(v8, '!!(window.MToolValueEditor && window.MToolValueEditor.__loaded)');
         if (!loaded) {
             runInGame(v8, pluginSrc);
@@ -214,9 +199,7 @@
         // 4.6 已加载 → 刷新配置
         var ok = evalInGame(v8, '!!(window.MToolValueEditor && window.MToolValueEditor.__loaded)');
         if (ok) {
-            if (injectedConfig) {
-                runInGame(v8, 'if (window.MToolValueEditor && window.MToolValueEditor.resetToDefault) { window.MToolValueEditor.resetToDefault(); }');
-            }
+            runInGame(v8, 'if (window.MToolValueEditor && window.MToolValueEditor.resetToDefault) { window.MToolValueEditor.resetToDefault(); }');
             var count = evalInGame(v8, 'window.MToolValueEditor.getEntries().length');
             log('插件就绪，当前条目数：' + count + '。按 F9 打开面板。');
         } else {
